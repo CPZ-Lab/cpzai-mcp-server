@@ -35,8 +35,24 @@ function formatResult(result: { ok: boolean; status: number; data: unknown }) {
   return { content: [{ type: 'text' as const, text }] };
 }
 
+function formatError(err: unknown) {
+  const message = err instanceof Error ? err.message : String(err);
+  return { content: [{ type: 'text' as const, text: `Internal error: ${message}` }], isError: true as const };
+}
+
 export function registerTools(server: McpServer, req: Request) {
   const creds = extractCredentials(req);
+
+  if (!creds.apiKey || !creds.apiSecret) {
+    server.registerTool('list_strategies', {
+      title: 'List Strategies',
+      description: 'List all trading strategies. Requires authentication.',
+      inputSchema: z.object({}),
+    }, async () => {
+      return formatError(new Error('Missing API credentials. Set X-CPZ-Key/X-CPZ-Secret headers or pass a Bearer token.'));
+    });
+    return;
+  }
 
   // ── Strategies ──────────────────────────────────────────────
 
@@ -51,14 +67,18 @@ export function registerTools(server: McpServer, req: Request) {
       offset: z.number().optional().describe('Skip N results'),
     }),
   }, async (args) => {
-    const query: Record<string, string> = {};
-    if (args.status) query.status = args.status;
-    if (args.strategy_type) query.strategy_type = args.strategy_type;
-    if (args.title) query.title = args.title;
-    if (args.limit) query.limit = String(args.limit);
-    if (args.offset) query.offset = String(args.offset);
-    const result = await callRestApi({ method: 'GET', path: '/strategies', query, ...creds });
-    return formatResult(result);
+    try {
+      const query: Record<string, string> = {};
+      if (args.status) query.status = args.status;
+      if (args.strategy_type) query.strategy_type = args.strategy_type;
+      if (args.title) query.title = args.title;
+      if (args.limit) query.limit = String(args.limit);
+      if (args.offset) query.offset = String(args.offset);
+      const result = await callRestApi({ method: 'GET', path: '/strategies', query, ...creds });
+      return formatResult(result);
+    } catch (err) {
+      return formatError(err);
+    }
   });
 
   server.registerTool('get_strategy', {
@@ -66,8 +86,12 @@ export function registerTools(server: McpServer, req: Request) {
     description: 'Get a specific strategy by ID.',
     inputSchema: z.object({ id: z.string().describe('Strategy UUID') }),
   }, async (args) => {
-    const result = await callRestApi({ method: 'GET', path: `/strategies/${args.id}`, ...creds });
-    return formatResult(result);
+    try {
+      const result = await callRestApi({ method: 'GET', path: `/strategies/${args.id}`, ...creds });
+      return formatResult(result);
+    } catch (err) {
+      return formatError(err);
+    }
   });
 
   server.registerTool('create_strategy', {
@@ -81,8 +105,12 @@ export function registerTools(server: McpServer, req: Request) {
       status: z.string().optional().describe('e.g. draft, active'),
     }),
   }, async (args) => {
-    const result = await callRestApi({ method: 'POST', path: '/strategies', body: args, ...creds });
-    return formatResult(result);
+    try {
+      const result = await callRestApi({ method: 'POST', path: '/strategies', body: args, ...creds });
+      return formatResult(result);
+    } catch (err) {
+      return formatError(err);
+    }
   });
 
   server.registerTool('update_strategy', {
@@ -96,9 +124,13 @@ export function registerTools(server: McpServer, req: Request) {
       status: z.string().optional(),
     }),
   }, async (args) => {
-    const { id, ...body } = args;
-    const result = await callRestApi({ method: 'PATCH', path: `/strategies/${id}`, body, ...creds });
-    return formatResult(result);
+    try {
+      const { id, ...body } = args;
+      const result = await callRestApi({ method: 'PATCH', path: `/strategies/${id}`, body, ...creds });
+      return formatResult(result);
+    } catch (err) {
+      return formatError(err);
+    }
   });
 
   // ── Backtests ───────────────────────────────────────────────
@@ -112,12 +144,16 @@ export function registerTools(server: McpServer, req: Request) {
       offset: z.number().optional(),
     }),
   }, async (args) => {
-    const query: Record<string, string> = {};
-    if (args.strategy_id) query.strategy_id = args.strategy_id;
-    if (args.limit) query.limit = String(args.limit);
-    if (args.offset) query.offset = String(args.offset);
-    const result = await callRestApi({ method: 'GET', path: '/backtests', query, ...creds });
-    return formatResult(result);
+    try {
+      const query: Record<string, string> = {};
+      if (args.strategy_id) query.strategy_id = args.strategy_id;
+      if (args.limit) query.limit = String(args.limit);
+      if (args.offset) query.offset = String(args.offset);
+      const result = await callRestApi({ method: 'GET', path: '/backtests', query, ...creds });
+      return formatResult(result);
+    } catch (err) {
+      return formatError(err);
+    }
   });
 
   // ── Orders ──────────────────────────────────────────────────
@@ -134,15 +170,19 @@ export function registerTools(server: McpServer, req: Request) {
       offset: z.number().optional(),
     }),
   }, async (args) => {
-    const query: Record<string, string> = {};
-    if (args.status) query.status = args.status;
-    if (args.symbol) query.symbol = args.symbol;
-    if (args.side) query.side = args.side;
-    if (args.strategy_id) query.strategy_id = args.strategy_id;
-    if (args.limit) query.limit = String(args.limit);
-    if (args.offset) query.offset = String(args.offset);
-    const result = await callRestApi({ method: 'GET', path: '/orders', query, ...creds });
-    return formatResult(result);
+    try {
+      const query: Record<string, string> = {};
+      if (args.status) query.status = args.status;
+      if (args.symbol) query.symbol = args.symbol;
+      if (args.side) query.side = args.side;
+      if (args.strategy_id) query.strategy_id = args.strategy_id;
+      if (args.limit) query.limit = String(args.limit);
+      if (args.offset) query.offset = String(args.offset);
+      const result = await callRestApi({ method: 'GET', path: '/orders', query, ...creds });
+      return formatResult(result);
+    } catch (err) {
+      return formatError(err);
+    }
   });
 
   server.registerTool('place_order', {
@@ -159,8 +199,12 @@ export function registerTools(server: McpServer, req: Request) {
     }),
     annotations: { destructiveHint: true, idempotentHint: false },
   }, async (args) => {
-    const result = await callRestApi({ method: 'POST', path: '/orders', body: args, ...creds });
-    return formatResult(result);
+    try {
+      const result = await callRestApi({ method: 'POST', path: '/orders', body: args, ...creds });
+      return formatResult(result);
+    } catch (err) {
+      return formatError(err);
+    }
   });
 
   // ── Positions ───────────────────────────────────────────────
@@ -173,11 +217,15 @@ export function registerTools(server: McpServer, req: Request) {
       symbol: z.string().optional(),
     }),
   }, async (args) => {
-    const query: Record<string, string> = {};
-    if (args.account_id) query.account_id = args.account_id;
-    if (args.symbol) query.symbol = args.symbol;
-    const result = await callRestApi({ method: 'GET', path: '/positions', query, ...creds });
-    return formatResult(result);
+    try {
+      const query: Record<string, string> = {};
+      if (args.account_id) query.account_id = args.account_id;
+      if (args.symbol) query.symbol = args.symbol;
+      const result = await callRestApi({ method: 'GET', path: '/positions', query, ...creds });
+      return formatResult(result);
+    } catch (err) {
+      return formatError(err);
+    }
   });
 
   // ── Portfolio ───────────────────────────────────────────────
@@ -187,8 +235,12 @@ export function registerTools(server: McpServer, req: Request) {
     description: 'Trigger a portfolio sync across all connected broker accounts.',
     inputSchema: z.object({}),
   }, async () => {
-    const result = await callRestApi({ method: 'POST', path: '/portfolio-sync', ...creds });
-    return formatResult(result);
+    try {
+      const result = await callRestApi({ method: 'POST', path: '/portfolio-sync', ...creds });
+      return formatResult(result);
+    } catch (err) {
+      return formatError(err);
+    }
   });
 
   // ── Accounts ────────────────────────────────────────────────
@@ -201,11 +253,15 @@ export function registerTools(server: McpServer, req: Request) {
       environment: z.string().optional().describe('live or paper'),
     }),
   }, async (args) => {
-    const query: Record<string, string> = {};
-    if (args.broker) query.broker = args.broker;
-    if (args.environment) query.environment = args.environment;
-    const result = await callRestApi({ method: 'GET', path: '/accounts', query, ...creds });
-    return formatResult(result);
+    try {
+      const query: Record<string, string> = {};
+      if (args.broker) query.broker = args.broker;
+      if (args.environment) query.environment = args.environment;
+      const result = await callRestApi({ method: 'GET', path: '/accounts', query, ...creds });
+      return formatResult(result);
+    } catch (err) {
+      return formatError(err);
+    }
   });
 
   // ── Market Data ─────────────────────────────────────────────
@@ -217,13 +273,17 @@ export function registerTools(server: McpServer, req: Request) {
       symbols: z.array(z.string()).describe('Ticker symbols (e.g. ["AAPL", "MSFT"])'),
     }),
   }, async (args) => {
-    const result = await callRestApi({
-      method: 'POST',
-      path: '/market-data',
-      query: { symbols: args.symbols.join(',') },
-      ...creds,
-    });
-    return formatResult(result);
+    try {
+      const result = await callRestApi({
+        method: 'POST',
+        path: '/market-data',
+        query: { symbols: args.symbols.join(',') },
+        ...creds,
+      });
+      return formatResult(result);
+    } catch (err) {
+      return formatError(err);
+    }
   });
 
   // ── Risk ────────────────────────────────────────────────────
@@ -235,10 +295,14 @@ export function registerTools(server: McpServer, req: Request) {
       account_id: z.string().optional().describe('Compute for a specific account'),
     }),
   }, async (args) => {
-    const body: Record<string, unknown> = {};
-    if (args.account_id) body.account_id = args.account_id;
-    const result = await callRestApi({ method: 'POST', path: '/risk-compute', body, ...creds });
-    return formatResult(result);
+    try {
+      const body: Record<string, unknown> = {};
+      if (args.account_id) body.account_id = args.account_id;
+      const result = await callRestApi({ method: 'POST', path: '/risk-compute', body, ...creds });
+      return formatResult(result);
+    } catch (err) {
+      return formatError(err);
+    }
   });
 
   server.registerTool('list_risk_snapshots', {
@@ -249,11 +313,15 @@ export function registerTools(server: McpServer, req: Request) {
       limit: z.number().optional(),
     }),
   }, async (args) => {
-    const query: Record<string, string> = {};
-    if (args.account_id) query.account_id = args.account_id;
-    if (args.limit) query.limit = String(args.limit);
-    const result = await callRestApi({ method: 'GET', path: '/risk-snapshots', query, ...creds });
-    return formatResult(result);
+    try {
+      const query: Record<string, string> = {};
+      if (args.account_id) query.account_id = args.account_id;
+      if (args.limit) query.limit = String(args.limit);
+      const result = await callRestApi({ method: 'GET', path: '/risk-snapshots', query, ...creds });
+      return formatResult(result);
+    } catch (err) {
+      return formatError(err);
+    }
   });
 
   // ── Execute Strategy ────────────────────────────────────────
@@ -267,8 +335,12 @@ export function registerTools(server: McpServer, req: Request) {
     }),
     annotations: { destructiveHint: true, idempotentHint: false },
   }, async (args) => {
-    const result = await callRestApi({ method: 'POST', path: '/execute', body: args, ...creds });
-    return formatResult(result);
+    try {
+      const result = await callRestApi({ method: 'POST', path: '/execute', body: args, ...creds });
+      return formatResult(result);
+    } catch (err) {
+      return formatError(err);
+    }
   });
 
   // ── Webhooks ────────────────────────────────────────────────
@@ -278,8 +350,12 @@ export function registerTools(server: McpServer, req: Request) {
     description: 'List configured webhook subscriptions.',
     inputSchema: z.object({}),
   }, async () => {
-    const result = await callRestApi({ method: 'GET', path: '/webhooks', ...creds });
-    return formatResult(result);
+    try {
+      const result = await callRestApi({ method: 'GET', path: '/webhooks', ...creds });
+      return formatResult(result);
+    } catch (err) {
+      return formatError(err);
+    }
   });
 
   server.registerTool('create_webhook', {
@@ -297,8 +373,12 @@ export function registerTools(server: McpServer, req: Request) {
       description: z.string().optional(),
     }),
   }, async (args) => {
-    const result = await callRestApi({ method: 'POST', path: '/webhooks', body: args, ...creds });
-    return formatResult(result);
+    try {
+      const result = await callRestApi({ method: 'POST', path: '/webhooks', body: args, ...creds });
+      return formatResult(result);
+    } catch (err) {
+      return formatError(err);
+    }
   });
 
   server.registerTool('delete_webhook', {
@@ -307,8 +387,12 @@ export function registerTools(server: McpServer, req: Request) {
     inputSchema: z.object({ id: z.string().describe('Webhook UUID') }),
     annotations: { destructiveHint: true },
   }, async (args) => {
-    const result = await callRestApi({ method: 'DELETE', path: `/webhooks/${args.id}`, ...creds });
-    return formatResult(result);
+    try {
+      const result = await callRestApi({ method: 'DELETE', path: `/webhooks/${args.id}`, ...creds });
+      return formatResult(result);
+    } catch (err) {
+      return formatError(err);
+    }
   });
 
   // ── User Profile ────────────────────────────────────────────
@@ -318,7 +402,11 @@ export function registerTools(server: McpServer, req: Request) {
     description: 'Get the current authenticated user profile.',
     inputSchema: z.object({}),
   }, async () => {
-    const result = await callRestApi({ method: 'GET', path: '/me', ...creds });
-    return formatResult(result);
+    try {
+      const result = await callRestApi({ method: 'GET', path: '/me', ...creds });
+      return formatResult(result);
+    } catch (err) {
+      return formatError(err);
+    }
   });
 }

@@ -24,19 +24,26 @@ app.get('/health', (_req, res) => {
 });
 
 app.post('/mcp', async (req, res) => {
-  const server = new McpServer({
-    name: 'cpzai-mcp-server',
-    version: '1.0.0',
-  });
+  try {
+    const server = new McpServer({
+      name: 'cpzai-mcp-server',
+      version: '1.0.0',
+    });
 
-  registerTools(server, req);
+    registerTools(server, req);
 
-  const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: undefined, // stateless
-  });
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined, // stateless
+    });
 
-  await server.connect(transport);
-  await transport.handleRequest(req, res, req.body);
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+  } catch (err) {
+    Sentry.captureException(err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
 });
 
 app.get('/mcp', async (_req, res) => {
