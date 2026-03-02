@@ -73,7 +73,8 @@ jobs:
           aws ecs update-service --cluster aquila-mcp --service aquila-mcp --force-new-deployment
 
       - name: Create Sentry release
-        if: always()
+        if: success()
+        continue-on-error: true
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
