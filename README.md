@@ -4,10 +4,10 @@
   </a>
 </p>
 
-<h1 align="center">Aquila MCP Server</h1>
+<h1 align="center">CPZAI MCP Server</h1>
 
 <p align="center">
-  <strong>Model Context Protocol Server for AI Agent Access to Aquila Quant Studio</strong>
+  <strong>Model Context Protocol Server for AI Agent Access to CPZAI</strong>
 </p>
 
 <p align="center">
@@ -15,14 +15,15 @@
   <a href="https://github.com/CPZ-Lab/aquila-mcp-server/actions/workflows/ci.yml"><img src="https://github.com/CPZ-Lab/aquila-mcp-server/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://img.shields.io/badge/MCP-v1.0-green"><img src="https://img.shields.io/badge/MCP-v1.0-green.svg" alt="MCP v1.0"></a>
   <a href="https://img.shields.io/badge/transport-Streamable_HTTP-orange"><img src="https://img.shields.io/badge/transport-Streamable_HTTP-orange.svg" alt="Streamable HTTP"></a>
+  <a href="https://img.shields.io/badge/monitoring-Sentry-362d59"><img src="https://img.shields.io/badge/monitoring-Sentry-362d59.svg" alt="Sentry"></a>
   <a href="https://github.com/CPZ-Lab/aquila-mcp-server"><img src="https://img.shields.io/badge/license-private-lightgrey.svg" alt="License"></a>
 </p>
 
 ---
 
-Production-grade [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that exposes [Aquila Quant Studio](https://github.com/CPZ-Lab/aquila-quant-studio) capabilities as tools for AI agents (Claude, Cursor, GPT, and any MCP-compatible client).
+Production-grade [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that exposes [CPZAI](https://ai.cpz-lab.com) capabilities as tools for AI agents (Claude, Cursor, GPT, and any MCP-compatible client).
 
-Deployed on AWS ECS Fargate at `mcp.cpz-lab.com` and managed by [CPZ Quant Studio](https://github.com/CPZ-Lab/aquila-quant-studio).
+Deployed on AWS ECS Fargate at `mcp.cpz-lab.com` with Sentry error monitoring and automated bug-fixing via Cursor CLI.
 
 ## Architecture
 

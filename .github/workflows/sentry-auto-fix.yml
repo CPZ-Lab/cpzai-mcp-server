@@ -1,0 +1,191 @@
+name: Sentry Auto-Fix
+
+on:
+  workflow_dispatch:
+    inputs:
+      sentry_issue_id:
+        description: "Sentry issue ID"
+        required: true
+        type: string
+      title:
+        description: "Error title from Sentry"
+        required: true
+        type: string
+      stacktrace:
+        description: "Stacktrace JSON (compact)"
+        required: true
+        type: string
+      sentry_url:
+        description: "URL to the issue in Sentry"
+        required: true
+        type: string
+      culprit:
+        description: "File/function where the error originated"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+
+concurrency:
+  group: sentry-fix-${{ github.event.inputs.sentry_issue_id }}
+  cancel-in-progress: true
+
+jobs:
+  auto-fix:
+    name: "Auto-fix Sentry Issue #${{ github.event.inputs.sentry_issue_id }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FIX_BRANCH: "fix/sentry-${{ github.event.inputs.sentry_issue_id }}"
+      SENTRY_ISSUE_ID: ${{ github.event.inputs.sentry_issue_id }}
+      SENTRY_URL: ${{ github.event.inputs.sentry_url }}
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Cursor CLI
+        run: |
+          curl https://cursor.com/install -fsS | bash
+          echo "$HOME/.cursor/bin" >> $GITHUB_PATH
+
+      - name: Configure git
+        run: |
+          git config user.name "Sentry Auto-Fix Bot"
+          git config user.email "sentry-bot@cpz-lab.com"
+
+      - name: Create fix branch
+        run: git checkout -B "$FIX_BRANCH"
+
+      - name: Write agent prompt
+        run: |
+          python3 -c "
+          import os
+          prompt = '''You are an expert bug-fixing agent for the CPZAI MCP Server (a TypeScript/Node.js MCP server deployed on AWS ECS Fargate).
+
+          ## Sentry Error to Fix
+
+          **Title:** {title}
+          **Culprit:** {culprit}
+          **Sentry URL:** {sentry_url}
+
+          ## Stacktrace
+
+          {stacktrace}
+
+          ## Project Context
+
+          - This is a Model Context Protocol (MCP) server built with Express + @modelcontextprotocol/sdk
+          - Source code is in src/ (index.ts, tools.ts, api-client.ts)
+          - Tests are in tests/
+          - It proxies tool calls to the CPZAI REST API
+
+          ## Instructions
+
+          1. Analyze the error title and stacktrace carefully.
+          2. Identify the file(s) and line(s) causing the error.
+          3. Read the relevant source files to understand context.
+          4. Make a minimal, targeted fix.
+          5. Ensure the fix follows existing code patterns.
+          6. Add proper error handling (try/catch, null checks) where needed.
+
+          ## Rules
+
+          - ONLY modify source files to fix the bug.
+          - Do NOT run git commands, create PRs, or post comments.
+          - Keep changes as small and focused as possible.
+          - Do NOT modify package.json, lock files, or config files.
+          - If you cannot determine a fix, create SENTRY_FIX_NOTES.md explaining what you found.
+          '''
+          with open('/tmp/sentry-prompt.txt', 'w') as f:
+              f.write(prompt.format(
+                  title=os.environ.get('ERROR_TITLE', ''),
+                  culprit=os.environ.get('ERROR_CULPRIT', ''),
+                  sentry_url=os.environ.get('SENTRY_URL', ''),
+                  stacktrace=os.environ.get('ERROR_STACKTRACE', 'No stacktrace available'),
+              ))
+          "
+        env:
+          ERROR_TITLE: ${{ github.event.inputs.title }}
+          ERROR_CULPRIT: ${{ github.event.inputs.culprit }}
+          ERROR_STACKTRACE: ${{ github.event.inputs.stacktrace }}
+
+      - name: Run Cursor Agent
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
+          agent -p "$(cat /tmp/sentry-prompt.txt)" --force --model opus-4.6
+
+      - name: Check for changes
+        id: changes
+        run: |
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          else
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            git diff --stat
+          fi
+
+      - name: Run type check
+        if: steps.changes.outputs.has_changes == 'true'
+        run: npx tsc --noEmit
+        id: typecheck
+
+      - name: Run tests
+        if: steps.changes.outputs.has_changes == 'true'
+        run: npm test
+        id: tests
+
+      - name: Commit and push
+        if: steps.changes.outputs.has_changes == 'true' && steps.typecheck.outcome == 'success' && steps.tests.outcome == 'success'
+        run: |
+          git add -A
+          git reset HEAD -- SENTRY_FIX_NOTES.md 2>/dev/null || true
+          git commit -m "fix: auto-fix Sentry issue #${SENTRY_ISSUE_ID}
+
+          ${{ github.event.inputs.title }}
+
+          Auto-fixed by Cursor CLI agent (Claude 4.6 Opus).
+          Sentry: ${{ github.event.inputs.sentry_url }}"
+          git push origin "$FIX_BRANCH" --force
+
+      - name: Create PR
+        if: steps.changes.outputs.has_changes == 'true' && steps.typecheck.outcome == 'success' && steps.tests.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr create \
+            --base main \
+            --head "$FIX_BRANCH" \
+            --title "fix: Sentry #${SENTRY_ISSUE_ID} – ${{ github.event.inputs.title }}" \
+            --body "$(cat <<'EOF'
+          ## Sentry Auto-Fix
+
+          **Issue:** [${{ github.event.inputs.title }}](${{ github.event.inputs.sentry_url }})
+          **Culprit:** `${{ github.event.inputs.culprit }}`
+
+          ### What was fixed
+          Auto-generated by the Sentry Auto-Fix pipeline using Cursor CLI (Claude 4.6 Opus).
+
+          ### Review checklist
+          - [ ] Fix addresses the root cause
+          - [ ] No unrelated changes
+          - [ ] CI passes
+          EOF
+          )"

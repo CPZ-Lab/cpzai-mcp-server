@@ -370,6 +370,7 @@ resource "aws_ecs_task_definition" "mcp" {
     secrets = [
       { name = "SUPABASE_URL", valueFrom = "${aws_secretsmanager_secret.supabase.arn}:SUPABASE_URL::" },
       { name = "SUPABASE_SERVICE_ROLE_KEY", valueFrom = "${aws_secretsmanager_secret.supabase.arn}:SUPABASE_SERVICE_ROLE_KEY::" },
+      { name = "SENTRY_DSN", valueFrom = "${aws_secretsmanager_secret.supabase.arn}:SENTRY_DSN::" },
     ]
     environment = [
       { name = "NODE_ENV", value = "production" },
