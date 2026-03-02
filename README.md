@@ -38,13 +38,13 @@ Agent (Cursor / Claude / GPT / custom)
         │
         │  Service role / API key validation
         ▼
-   Supabase  ──  REST API edge functions + Postgres
+   CPZ Platform API  ──  REST API + Postgres
 ```
 
 **Key design decisions:**
 
 - **Stateless transport** — each request creates a fresh server instance. No session tracking. Scales horizontally without coordination.
-- **Thin protocol adapter** — validates API keys against Supabase, then proxies tool calls to the `rest-api` edge function. Zero business logic in the MCP layer.
+- **Thin protocol adapter** — validates API keys against the platform database, then proxies tool calls to the REST API. Zero business logic in the MCP layer.
 - **API key auth** — agents authenticate with CPZ platform API keys (`X-CPZ-Key` / `X-CPZ-Secret`), the same keys used by the REST API and [`cpz` Python SDK](https://github.com/CPZ-Lab/cpz-py).
 
 ## Available Tools
@@ -134,8 +134,8 @@ npm install
 ### Run locally
 
 ```bash
-export SUPABASE_URL=https://brkcjojfmlygsujiqglv.supabase.co
-export SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+export CPZ_API_BASE_URL=https://api.cpz-lab.com
+export CPZ_SERVICE_KEY=your_service_key
 
 npm run dev
 # Server starts on http://localhost:3001
@@ -182,7 +182,7 @@ All infrastructure is managed with Terraform in [`infra/main.tf`](infra/main.tf)
 | ALB | `aquila-mcp` | Internet-facing load balancer |
 | ACM | `mcp.cpz-lab.com` | TLS 1.3 certificate (DNS-validated) |
 | WAF | `aquila-mcp-waf` | Rate limiting (100/min) + AWS Managed Rules |
-| Secrets Manager | `aquila/mcp-server/supabase` | `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` |
+| Secrets Manager | `aquila/mcp-server/config` | Platform API URL + service key |
 | CloudWatch | `/ecs/aquila-mcp` | Logs (30-day retention) + 5xx alarm |
 | Auto Scaling | CPU target tracking | Scale at 60% CPU utilization |
 | CodeBuild | `aquila-mcp-build` | Remote Docker builds (no local Docker) |
@@ -209,11 +209,11 @@ Internet
            │ HTTPS
            ▼
 ┌──────────────────────────────────────┐
-│  Supabase                            │
-│  brkcjojfmlygsujiqglv.supabase.co    │
-│  ├── rest-api edge function          │
-│  ├── api_keys table (auth)           │
-│  └── All platform data              │
+│  CPZ Platform API                    │
+│  api.cpz-lab.com                     │
+│  ├── REST API                        │
+│  ├── API key authentication          │
+│  └── Platform data layer             │
 └──────────────────────────────────────┘
 ```
 
@@ -254,8 +254,8 @@ Wait 5–30 minutes for ACM certificate validation.
 
 ```bash
 aws secretsmanager put-secret-value \
-  --secret-id "aquila/mcp-server/supabase" \
-  --secret-string '{"SUPABASE_URL":"https://brkcjojfmlygsujiqglv.supabase.co","SUPABASE_SERVICE_ROLE_KEY":"<key>"}'
+  --secret-id "aquila/mcp-server/config" \
+  --secret-string '{"CPZ_API_BASE_URL":"https://api.cpz-lab.com","CPZ_SERVICE_KEY":"<key>"}'
 ```
 
 #### 5. Build and push image
@@ -326,7 +326,7 @@ aws cloudwatch describe-alarms --alarm-name-prefix aquila-mcp
 - AWS WAF rate-limits 100 requests/minute per IP
 - AWS Managed Rules block common web exploits (SQLi, XSS, etc.)
 - ECS container runs as non-root user
-- Supabase credentials in AWS Secrets Manager (never in code)
+- Platform credentials in AWS Secrets Manager (never in code)
 - API key validation per-request against `api_keys` table
 - All data access user-scoped via `user_id` from validated API key
 - Deployment circuit breaker with automatic rollback
@@ -335,7 +335,7 @@ aws cloudwatch describe-alarms --alarm-name-prefix aquila-mcp
 
 | Repo | Description |
 |------|-------------|
-| [aquila-quant-studio](https://github.com/CPZ-Lab/aquila-quant-studio) | Main platform (React + Supabase) |
+| [aquila-quant-studio](https://github.com/CPZ-Lab/aquila-quant-studio) | Main platform (React frontend) |
 | [cpz-py](https://github.com/CPZ-Lab/cpz-py) | Python SDK for the CPZ API |
 | [cpz-risk-server](https://github.com/CPZ-Lab/cpz-risk-server) | Risk analytics compute server |
 | [aquila-hft-engine](https://github.com/CPZ-Lab/aquila-hft-engine) | Low-latency Rust trading engine |
