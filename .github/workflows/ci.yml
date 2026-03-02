@@ -81,8 +81,9 @@ jobs:
           SENTRY_PROJECT: cpzai-mcp-server
         run: |
           if [ -n "$SENTRY_AUTH_TOKEN" ]; then
-            npx @sentry/cli releases new "cpzai-mcp-server@${{ github.sha }}"
-            npx @sentry/cli releases set-commits "cpzai-mcp-server@${{ github.sha }}" --auto
-            npx @sentry/cli releases finalize "cpzai-mcp-server@${{ github.sha }}"
-            npx @sentry/cli releases deploys "cpzai-mcp-server@${{ github.sha }}" new -e production
+            RELEASE="cpzai-mcp-server@${{ github.sha }}"
+            npx @sentry/cli releases new "$RELEASE" || true
+            npx @sentry/cli releases set-commits "$RELEASE" --auto || true
+            npx @sentry/cli releases finalize "$RELEASE" || true
+            npx @sentry/cli releases deploys "$RELEASE" new -e production || true
           fi
