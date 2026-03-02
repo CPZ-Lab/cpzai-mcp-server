@@ -7,7 +7,11 @@ import { callRestApi } from './api-client.js';
  * Extract CPZ API credentials from the incoming HTTP request.
  * Agents pass their API key/secret in headers, which we forward to the REST API.
  */
-function extractCredentials(req: Request): { apiKey: string; apiSecret: string } {
+function extractCredentials(req: Request | undefined): { apiKey: string; apiSecret: string } {
+  if (!req?.headers) {
+    return { apiKey: '', apiSecret: '' };
+  }
+
   const cpzKey = req.headers['x-cpz-key'] as string | undefined;
   const cpzSecret = req.headers['x-cpz-secret'] as string | undefined;
 
@@ -35,7 +39,7 @@ function formatResult(result: { ok: boolean; status: number; data: unknown }) {
   return { content: [{ type: 'text' as const, text }] };
 }
 
-export function registerTools(server: McpServer, req: Request) {
+export function registerTools(server: McpServer, req: Request | undefined) {
   const creds = extractCredentials(req);
 
   // ── Strategies ──────────────────────────────────────────────
