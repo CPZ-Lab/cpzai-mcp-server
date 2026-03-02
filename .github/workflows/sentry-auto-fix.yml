@@ -177,6 +177,7 @@ jobs:
           gh pr create \
             --base main \
             --head "$FIX_BRANCH" \
+            --reviewer chris-cpz \
             --title "fix: Sentry #${SENTRY_ISSUE_ID} – ${ERROR_TITLE}" \
             --body "$(cat <<EOF
           ## Sentry Auto-Fix
