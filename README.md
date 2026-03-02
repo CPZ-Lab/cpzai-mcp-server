@@ -1,6 +1,28 @@
-# Aquila Quant Studio — MCP Server
+<p align="center">
+  <a href="https://ai.cpz-lab.com/">
+    <img src="https://drive.google.com/uc?id=1JY-PoPj9GHmpq3bZLC7WyJLbGuT1L3hN" alt="CPZAI" width="180">
+  </a>
+</p>
 
-A production-grade [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that exposes Aquila Quant Studio capabilities as tools for AI agents (Claude, Cursor, GPT, etc.).
+<h1 align="center">Aquila MCP Server</h1>
+
+<p align="center">
+  <strong>Model Context Protocol Server for AI Agent Access to Aquila Quant Studio</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/CPZ-Lab/aquila-mcp-server"><img src="https://img.shields.io/badge/language-TypeScript-blue.svg" alt="TypeScript"></a>
+  <a href="https://github.com/CPZ-Lab/aquila-mcp-server/actions/workflows/ci.yml"><img src="https://github.com/CPZ-Lab/aquila-mcp-server/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://img.shields.io/badge/MCP-v1.0-green"><img src="https://img.shields.io/badge/MCP-v1.0-green.svg" alt="MCP v1.0"></a>
+  <a href="https://img.shields.io/badge/transport-Streamable_HTTP-orange"><img src="https://img.shields.io/badge/transport-Streamable_HTTP-orange.svg" alt="Streamable HTTP"></a>
+  <a href="https://github.com/CPZ-Lab/aquila-mcp-server"><img src="https://img.shields.io/badge/license-private-lightgrey.svg" alt="License"></a>
+</p>
+
+---
+
+Production-grade [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that exposes [Aquila Quant Studio](https://github.com/CPZ-Lab/aquila-quant-studio) capabilities as tools for AI agents (Claude, Cursor, GPT, and any MCP-compatible client).
+
+Deployed on AWS ECS Fargate at `mcp.cpz-lab.com` and managed by [CPZ Quant Studio](https://github.com/CPZ-Lab/aquila-quant-studio).
 
 ## Architecture
 
@@ -9,7 +31,7 @@ Agent (Cursor / Claude / GPT / custom)
         │
         │  Streamable HTTP + CPZ API key
         ▼
-   ALB + AWS WAF  ──  mcp.cpz-lab.com
+   ALB + AWS WAF  ──  mcp.cpz-lab.com:443
         │
         ▼
    ECS Fargate  ──  Node.js MCP server (stateless)
@@ -19,34 +41,82 @@ Agent (Cursor / Claude / GPT / custom)
    Supabase  ──  REST API edge functions + Postgres
 ```
 
-### Key design decisions
+**Key design decisions:**
 
-- **Stateless transport** — each MCP request creates a fresh server instance. No session tracking, no in-memory state. Scales horizontally without coordination.
-- **Thin protocol adapter** — the MCP server validates API keys against Supabase, then proxies tool calls to the `rest-api` edge function. Zero business logic in the MCP layer.
-- **API key auth** — agents authenticate with CPZ platform API keys (`X-CPZ-Key` / `X-CPZ-Secret` headers), the same keys used by the REST API and Python SDK.
+- **Stateless transport** — each request creates a fresh server instance. No session tracking. Scales horizontally without coordination.
+- **Thin protocol adapter** — validates API keys against Supabase, then proxies tool calls to the `rest-api` edge function. Zero business logic in the MCP layer.
+- **API key auth** — agents authenticate with CPZ platform API keys (`X-CPZ-Key` / `X-CPZ-Secret`), the same keys used by the REST API and [`cpz` Python SDK](https://github.com/CPZ-Lab/cpz-py).
 
-## Available Tools (18)
+## Available Tools
 
-| Tool | Description | Destructive |
-|------|-------------|:-----------:|
-| `list_strategies` | List trading strategies with filtering | |
-| `get_strategy` | Get a specific strategy by ID | |
+18 tools organized by domain:
+
+| Tool | Description | Read-only |
+|------|-------------|:---------:|
+| **Strategies** | | |
+| `list_strategies` | List trading strategies with filtering | Yes |
+| `get_strategy` | Get a specific strategy by ID | Yes |
 | `create_strategy` | Create a new trading strategy | |
 | `update_strategy` | Update an existing strategy | |
-| `get_backtest_results` | List backtest run results | |
-| `list_orders` | List trading orders | |
-| `place_order` | Place a new trading order | Yes |
-| `list_positions` | List current portfolio positions | |
+| **Backtests** | | |
+| `get_backtest_results` | List backtest run results | Yes |
+| **Orders & Trading** | | |
+| `list_orders` | List trading orders with filtering | Yes |
+| `place_order` | Place a new trading order | |
+| `list_positions` | List current portfolio positions | Yes |
 | `sync_portfolio` | Trigger portfolio sync across brokers | |
-| `list_accounts` | List connected trading accounts | |
-| `get_market_data` | Fetch real-time market data | |
-| `compute_risk` | Compute fresh risk snapshot | |
-| `list_risk_snapshots` | List historical risk snapshots | |
-| `execute_strategy` | Execute a strategy on Python backend | Yes |
-| `list_webhooks` | List webhook subscriptions | |
+| `list_accounts` | List connected trading accounts | Yes |
+| **Market Data** | | |
+| `get_market_data` | Fetch real-time quotes (price, bid/ask, volume) | Yes |
+| **Risk** | | |
+| `compute_risk` | Compute fresh risk snapshot (VaR, Sharpe, drawdown) | |
+| `list_risk_snapshots` | List historical risk snapshots | Yes |
+| **Execution** | | |
+| `execute_strategy` | Execute a strategy on the Python backend | |
+| **Webhooks** | | |
+| `list_webhooks` | List webhook subscriptions | Yes |
 | `create_webhook` | Subscribe to platform events | |
-| `delete_webhook` | Remove a webhook subscription | Yes |
-| `get_profile` | Get authenticated user profile | |
+| `delete_webhook` | Remove a webhook subscription | |
+| **User** | | |
+| `get_profile` | Get authenticated user profile | Yes |
+
+## Quick Start
+
+### Connect from Cursor
+
+Add to your Cursor MCP config (`.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "aquila": {
+      "url": "https://mcp.cpz-lab.com/mcp",
+      "headers": {
+        "X-CPZ-Key": "your_cpz_key_prefix",
+        "X-CPZ-Secret": "your_cpz_secret"
+      }
+    }
+  }
+}
+```
+
+### Connect from Claude Desktop
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "aquila": {
+      "url": "https://mcp.cpz-lab.com/mcp",
+      "headers": {
+        "X-CPZ-Key": "your_cpz_key_prefix",
+        "X-CPZ-Secret": "your_cpz_secret"
+      }
+    }
+  }
+}
+```
 
 ## Local Development
 
@@ -64,61 +134,58 @@ npm install
 ### Run locally
 
 ```bash
-# Set environment variables
 export SUPABASE_URL=https://brkcjojfmlygsujiqglv.supabase.co
 export SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
-# Start dev server
 npm run dev
+# Server starts on http://localhost:3001
 ```
 
-The server starts on `http://localhost:3001`. Test the health endpoint:
+### Run tests
 
 ```bash
-curl http://localhost:3001/health
+npm test            # single run
+npm run test:watch  # watch mode
 ```
 
-### Connect from Cursor / Claude Desktop
+### Type check
 
-Add to your MCP client config:
-
-```json
-{
-  "mcpServers": {
-    "aquila": {
-      "url": "https://mcp.cpz-lab.com/mcp",
-      "headers": {
-        "X-CPZ-Key": "your_cpz_key_prefix",
-        "X-CPZ-Secret": "your_cpz_secret"
-      }
-    }
-  }
-}
+```bash
+npx tsc --noEmit
 ```
+
+## CI/CD
+
+GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push and PR to `main`:
+
+| Job | Steps |
+|-----|-------|
+| **test** | Install → Type check → Run tests → Lint |
+| **docker** | Build Docker image (validates Dockerfile) |
+| **deploy** | *(main only)* Push to ECR → Force ECS deployment |
+
+The deploy job uses OIDC authentication with AWS (`AWS_DEPLOY_ROLE_ARN` secret). No long-lived AWS credentials stored in GitHub.
 
 ## Production Infrastructure
 
-All infrastructure is managed with Terraform in `infra/main.tf`.
+All infrastructure is managed with Terraform in [`infra/main.tf`](infra/main.tf).
 
-### AWS Resources Created
+### AWS Resources
 
-| Resource | Purpose |
-|----------|---------|
-| **VPC** | Isolated network (`10.0.0.0/16`) with public subnets in `us-east-1a` and `us-east-1b` |
-| **ECR Repository** | `aquila-mcp-server` — container image registry |
-| **ECS Cluster** | `aquila-mcp` — Fargate cluster with Container Insights |
-| **ECS Service** | 1 task (auto-scales 1–4), 0.5 vCPU / 1 GB RAM, deployment circuit breaker |
-| **ALB** | `aquila-mcp` — internet-facing Application Load Balancer |
-| **HTTPS Listener** | TLS 1.3, ACM certificate for `mcp.cpz-lab.com` |
-| **HTTP Listener** | Redirects to HTTPS (301) |
-| **AWS WAF** | Rate limiting (100 req/min per IP), AWS Managed Rules (common threats) |
-| **ACM Certificate** | DNS-validated SSL for `mcp.cpz-lab.com` |
-| **Secrets Manager** | `aquila/mcp-server/supabase` — stores `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` |
-| **CloudWatch Logs** | `/ecs/aquila-mcp` — 30-day retention |
-| **CloudWatch Alarm** | Alerts on >10 5xx errors in 5 minutes |
-| **Auto Scaling** | Target tracking on CPU utilization (target: 60%) |
-| **CodeBuild Project** | `aquila-mcp-build` — builds Docker image from S3 source, pushes to ECR |
-| **S3 Bucket** | `aquila-mcp-build-710414548933` — stores build source zip |
+| Resource | Name | Purpose |
+|----------|------|---------|
+| VPC | `aquila-mcp-vpc` | Isolated network (`10.0.0.0/16`) |
+| Subnets | `public-a`, `public-b` | Multi-AZ in `us-east-1` |
+| ECR | `aquila-mcp-server` | Container image registry |
+| ECS Cluster | `aquila-mcp` | Fargate cluster with Container Insights |
+| ECS Service | `aquila-mcp` | 1 task, auto-scales 1–4 (0.5 vCPU / 1 GB) |
+| ALB | `aquila-mcp` | Internet-facing load balancer |
+| ACM | `mcp.cpz-lab.com` | TLS 1.3 certificate (DNS-validated) |
+| WAF | `aquila-mcp-waf` | Rate limiting (100/min) + AWS Managed Rules |
+| Secrets Manager | `aquila/mcp-server/supabase` | `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` |
+| CloudWatch | `/ecs/aquila-mcp` | Logs (30-day retention) + 5xx alarm |
+| Auto Scaling | CPU target tracking | Scale at 60% CPU utilization |
+| CodeBuild | `aquila-mcp-build` | Remote Docker builds (no local Docker) |
 
 ### Network Diagram
 
@@ -127,102 +194,81 @@ Internet
     │
     ▼
 ┌──────────────────────────────────────┐
-│  ALB (public subnets)                │
-│  mcp.cpz-lab.com:443                 │
+│  ALB (public subnets, multi-AZ)      │
+│  mcp.cpz-lab.com:443 (TLS 1.3)      │
 │  + AWS WAF (rate limit + managed)    │
 └──────────┬───────────────────────────┘
            │ :3001
            ▼
 ┌──────────────────────────────────────┐
-│  ECS Fargate Tasks (public subnets)  │
+│  ECS Fargate (public subnets)        │
 │  aquila-mcp-server:latest            │
 │  SG: inbound 3001 from ALB only     │
-│  Secrets: from AWS Secrets Manager   │
+│  Secrets: AWS Secrets Manager        │
 └──────────┬───────────────────────────┘
            │ HTTPS
            ▼
 ┌──────────────────────────────────────┐
 │  Supabase                            │
 │  brkcjojfmlygsujiqglv.supabase.co    │
-│  - rest-api edge function            │
-│  - api_keys table (auth)             │
-│  - All platform data                 │
+│  ├── rest-api edge function          │
+│  ├── api_keys table (auth)           │
+│  └── All platform data              │
 └──────────────────────────────────────┘
 ```
 
-### Deploy from scratch
+### Deploy from Scratch
+
+<details>
+<summary><strong>Full deployment walkthrough</strong></summary>
 
 #### 1. Prerequisites
 
-- AWS CLI configured (`aws sts get-caller-identity`)
-- Terraform >= 1.5 (`brew install terraform`)
-- GitHub CLI (`brew install gh`)
+```bash
+aws sts get-caller-identity  # AWS CLI configured
+terraform --version           # >= 1.5
+gh auth status                # GitHub CLI authenticated
+```
 
 #### 2. Create infrastructure
 
 ```bash
 cd infra
-
-# Initialize Terraform
 terraform init
-
-# Review the plan
 terraform plan
-
-# Deploy everything
 terraform apply
 ```
 
-Terraform will output:
-- `ecr_repository_url` — where to push Docker images
-- `alb_dns_name` — CNAME target for DNS
-- `acm_validation_records` — DNS records for SSL certificate validation
-- `mcp_endpoint` — the final MCP URL
+Outputs: `ecr_repository_url`, `alb_dns_name`, `acm_validation_records`, `mcp_endpoint`
 
-#### 3. DNS Setup (Squarespace)
+#### 3. DNS Setup
 
 Add two CNAME records in your DNS provider:
 
-1. **SSL Certificate validation** (from `acm_validation_records` output)
-2. **`mcp` → ALB DNS name** (from `alb_dns_name` output)
+1. **SSL validation** — from `acm_validation_records` output
+2. **`mcp` → ALB** — from `alb_dns_name` output
 
-Wait for the ACM certificate to validate (5–30 minutes after DNS propagation).
+Wait 5–30 minutes for ACM certificate validation.
 
 #### 4. Store secrets
 
 ```bash
 aws secretsmanager put-secret-value \
   --secret-id "aquila/mcp-server/supabase" \
-  --secret-string '{"SUPABASE_URL":"https://brkcjojfmlygsujiqglv.supabase.co","SUPABASE_SERVICE_ROLE_KEY":"your_service_role_key_here"}'
+  --secret-string '{"SUPABASE_URL":"https://brkcjojfmlygsujiqglv.supabase.co","SUPABASE_SERVICE_ROLE_KEY":"<key>"}'
 ```
 
-#### 5. Build and push Docker image
+#### 5. Build and push image
 
-Using AWS CodeBuild (no local Docker required):
+Via AWS CodeBuild (no local Docker):
 
 ```bash
-# Zip the source
 zip -r /tmp/mcp-server-source.zip . -x "node_modules/*" -x "dist/*" -x "infra/.terraform/*"
-
-# Upload to S3
 aws s3 cp /tmp/mcp-server-source.zip s3://aquila-mcp-build-710414548933/source.zip
-
-# Trigger build
 aws codebuild start-build --project-name aquila-mcp-build
 ```
 
-Or with local Docker:
-
-```bash
-# Login to ECR
-aws ecr get-login-password | docker login --username AWS --password-stdin 710414548933.dkr.ecr.us-east-1.amazonaws.com
-
-# Build and push
-docker build -t 710414548933.dkr.ecr.us-east-1.amazonaws.com/aquila-mcp-server:latest .
-docker push 710414548933.dkr.ecr.us-east-1.amazonaws.com/aquila-mcp-server:latest
-```
-
-#### 6. Force new deployment (after image push or secret update)
+#### 6. Force deployment
 
 ```bash
 aws ecs update-service --cluster aquila-mcp --service aquila-mcp --force-new-deployment
@@ -232,61 +278,69 @@ aws ecs update-service --cluster aquila-mcp --service aquila-mcp --force-new-dep
 
 ```bash
 curl https://mcp.cpz-lab.com/health
-# {"status":"ok","service":"aquila-mcp-server","timestamp":"..."}
 ```
 
-### Updating the server
+</details>
 
-After code changes:
+### Updating
+
+After code changes, push to `main` and CI/CD handles the rest. For manual deploys:
 
 ```bash
-# Re-zip, upload, build
-cd /path/to/mcp-server
 zip -r /tmp/mcp-server-source.zip . -x "node_modules/*" -x "dist/*" -x "infra/.terraform/*"
 aws s3 cp /tmp/mcp-server-source.zip s3://aquila-mcp-build-710414548933/source.zip
 aws codebuild start-build --project-name aquila-mcp-build
-
-# Wait for build to succeed, then force new deployment
+# Wait for build, then:
 aws ecs update-service --cluster aquila-mcp --service aquila-mcp --force-new-deployment
 ```
 
 ### Monitoring
 
 ```bash
-# ECS service status
+# Service status
 aws ecs describe-services --cluster aquila-mcp --services aquila-mcp \
-  --query "services[0].{running:runningCount,pending:pendingCount,desired:desiredCount}"
+  --query "services[0].{running:runningCount,desired:desiredCount}"
 
-# Recent logs
-aws logs tail /ecs/aquila-mcp --since 1h
+# Live logs
+aws logs tail /ecs/aquila-mcp --since 1h --follow
 
-# CloudWatch alarms
+# Alarms
 aws cloudwatch describe-alarms --alarm-name-prefix aquila-mcp
 ```
 
-### Estimated monthly cost
+### Estimated Cost
 
-| Resource | Cost |
-|----------|------|
+| Resource | Monthly |
+|----------|---------|
 | ECS Fargate (0.5 vCPU, 1 GB, 1 task) | ~$15 |
-| ALB | ~$16 + $0.008/LCU-hr |
-| WAF | ~$6 + $0.60/M requests |
-| NAT Gateway | $0 (using public subnets) |
+| ALB | ~$16 |
+| WAF | ~$6 |
 | Secrets Manager | ~$0.40 |
 | CloudWatch Logs | ~$0.50/GB |
 | ECR | ~$0.10/GB |
-| **Total (idle)** | **~$38/month** |
+| **Total (idle)** | **~$38** |
 
 ## Security
 
-- All traffic is HTTPS with TLS 1.3
-- AWS WAF rate-limits to 100 requests/minute per IP
-- AWS Managed Rules block common web exploits
-- ECS tasks run as non-root user in the container
-- Supabase credentials stored in AWS Secrets Manager (never in code or env vars)
-- API key validation happens per-request against the Supabase `api_keys` table
-- All data access is user-scoped via `user_id` from the validated API key
+- All traffic HTTPS with TLS 1.3
+- AWS WAF rate-limits 100 requests/minute per IP
+- AWS Managed Rules block common web exploits (SQLi, XSS, etc.)
+- ECS container runs as non-root user
+- Supabase credentials in AWS Secrets Manager (never in code)
+- API key validation per-request against `api_keys` table
+- All data access user-scoped via `user_id` from validated API key
+- Deployment circuit breaker with automatic rollback
+
+## Related Repositories
+
+| Repo | Description |
+|------|-------------|
+| [aquila-quant-studio](https://github.com/CPZ-Lab/aquila-quant-studio) | Main platform (React + Supabase) |
+| [cpz-py](https://github.com/CPZ-Lab/cpz-py) | Python SDK for the CPZ API |
+| [cpz-risk-server](https://github.com/CPZ-Lab/cpz-risk-server) | Risk analytics compute server |
+| [aquila-hft-engine](https://github.com/CPZ-Lab/aquila-hft-engine) | Low-latency Rust trading engine |
+| [aquila-backend](https://github.com/CPZ-Lab/aquila-backend) | Python strategy execution backend |
 
 ## License
 
-Private — Aquila Quant Studio / CPZ Lab
+Private — [CPZ Lab](https://www.cpz-lab.com/)
