@@ -63,21 +63,6 @@ resource "aws_subnet" "public_b" {
   tags                    = { Name = "${local.name_prefix}-public-b" }
 }
 
-# Private subnets (ECS tasks)
-resource "aws_subnet" "private_a" {
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = "10.0.10.0/24"
-  availability_zone = local.az_a
-  tags              = { Name = "${local.name_prefix}-private-a" }
-}
-
-resource "aws_subnet" "private_b" {
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = "10.0.11.0/24"
-  availability_zone = local.az_b
-  tags              = { Name = "${local.name_prefix}-private-b" }
-}
-
 # Route tables
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
@@ -113,6 +98,14 @@ resource "aws_acm_certificate" "mcp" {
   }
 
   tags = { Name = "${local.name_prefix}-cert" }
+}
+
+resource "aws_acm_certificate_validation" "mcp" {
+  certificate_arn = aws_acm_certificate.mcp.arn
+
+  timeouts {
+    create = "5m"
+  }
 }
 
 # ── Secrets Manager ──────────────────────────────────────────
@@ -225,7 +218,7 @@ resource "aws_lb_listener" "https" {
   port              = 443
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
-  certificate_arn   = aws_acm_certificate.mcp.arn
+  certificate_arn   = aws_acm_certificate_validation.mcp.certificate_arn
 
   default_action {
     type             = "forward"
@@ -398,7 +391,7 @@ resource "aws_ecs_service" "mcp" {
   name            = local.name_prefix
   cluster         = aws_ecs_cluster.mcp.id
   task_definition = aws_ecs_task_definition.mcp.arn
-  desired_count   = 1
+  desired_count   = 2
   launch_type     = "FARGATE"
 
   network_configuration {
@@ -425,7 +418,7 @@ resource "aws_ecs_service" "mcp" {
 
 resource "aws_appautoscaling_target" "mcp" {
   max_capacity       = 4
-  min_capacity       = 1
+  min_capacity       = 2
   resource_id        = "service/${aws_ecs_cluster.mcp.name}/${aws_ecs_service.mcp.name}"
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
