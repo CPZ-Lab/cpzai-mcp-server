@@ -50,6 +50,7 @@ export function registerTools(server: McpServer, req: Request) {
       limit: z.number().optional().describe('Max results (1-100)'),
       offset: z.number().optional().describe('Skip N results'),
     }),
+    annotations: { readOnlyHint: true },
   }, async (args) => {
     const query: Record<string, string> = {};
     if (args.status) query.status = args.status;
@@ -65,6 +66,7 @@ export function registerTools(server: McpServer, req: Request) {
     title: 'Get Strategy',
     description: 'Get a specific strategy by ID.',
     inputSchema: z.object({ id: z.string().describe('Strategy UUID') }),
+    annotations: { readOnlyHint: true },
   }, async (args) => {
     const result = await callRestApi({ method: 'GET', path: `/strategies/${args.id}`, ...creds });
     return formatResult(result);
@@ -80,6 +82,7 @@ export function registerTools(server: McpServer, req: Request) {
       python_code: z.string().optional().describe('Python code for the strategy'),
       status: z.string().optional().describe('e.g. draft, active'),
     }),
+    annotations: { readOnlyHint: false },
   }, async (args) => {
     const result = await callRestApi({ method: 'POST', path: '/strategies', body: args, ...creds });
     return formatResult(result);
@@ -95,6 +98,7 @@ export function registerTools(server: McpServer, req: Request) {
       python_code: z.string().optional(),
       status: z.string().optional(),
     }),
+    annotations: { readOnlyHint: false },
   }, async (args) => {
     const { id, ...body } = args;
     const result = await callRestApi({ method: 'PATCH', path: `/strategies/${id}`, body, ...creds });
@@ -111,6 +115,7 @@ export function registerTools(server: McpServer, req: Request) {
       limit: z.number().optional(),
       offset: z.number().optional(),
     }),
+    annotations: { readOnlyHint: true },
   }, async (args) => {
     const query: Record<string, string> = {};
     if (args.strategy_id) query.strategy_id = args.strategy_id;
@@ -133,6 +138,7 @@ export function registerTools(server: McpServer, req: Request) {
       limit: z.number().optional(),
       offset: z.number().optional(),
     }),
+    annotations: { readOnlyHint: true },
   }, async (args) => {
     const query: Record<string, string> = {};
     if (args.status) query.status = args.status;
@@ -172,6 +178,7 @@ export function registerTools(server: McpServer, req: Request) {
       account_id: z.string().optional(),
       symbol: z.string().optional(),
     }),
+    annotations: { readOnlyHint: true },
   }, async (args) => {
     const query: Record<string, string> = {};
     if (args.account_id) query.account_id = args.account_id;
@@ -186,6 +193,7 @@ export function registerTools(server: McpServer, req: Request) {
     title: 'Sync Portfolio',
     description: 'Trigger a portfolio sync across all connected broker accounts.',
     inputSchema: z.object({}),
+    annotations: { readOnlyHint: false },
   }, async () => {
     const result = await callRestApi({ method: 'POST', path: '/portfolio-sync', ...creds });
     return formatResult(result);
@@ -200,6 +208,7 @@ export function registerTools(server: McpServer, req: Request) {
       broker: z.string().optional().describe('Filter by broker (alpaca, ibkr)'),
       environment: z.string().optional().describe('live or paper'),
     }),
+    annotations: { readOnlyHint: true },
   }, async (args) => {
     const query: Record<string, string> = {};
     if (args.broker) query.broker = args.broker;
@@ -216,6 +225,7 @@ export function registerTools(server: McpServer, req: Request) {
     inputSchema: z.object({
       symbols: z.array(z.string()).describe('Ticker symbols (e.g. ["AAPL", "MSFT"])'),
     }),
+    annotations: { readOnlyHint: true },
   }, async (args) => {
     const result = await callRestApi({
       method: 'POST',
@@ -234,6 +244,7 @@ export function registerTools(server: McpServer, req: Request) {
     inputSchema: z.object({
       account_id: z.string().optional().describe('Compute for a specific account'),
     }),
+    annotations: { readOnlyHint: false },
   }, async (args) => {
     const body: Record<string, unknown> = {};
     if (args.account_id) body.account_id = args.account_id;
@@ -248,6 +259,7 @@ export function registerTools(server: McpServer, req: Request) {
       account_id: z.string().optional(),
       limit: z.number().optional(),
     }),
+    annotations: { readOnlyHint: true },
   }, async (args) => {
     const query: Record<string, string> = {};
     if (args.account_id) query.account_id = args.account_id;
@@ -277,6 +289,7 @@ export function registerTools(server: McpServer, req: Request) {
     title: 'List Webhooks',
     description: 'List configured webhook subscriptions.',
     inputSchema: z.object({}),
+    annotations: { readOnlyHint: true },
   }, async () => {
     const result = await callRestApi({ method: 'GET', path: '/webhooks', ...creds });
     return formatResult(result);
@@ -296,6 +309,7 @@ export function registerTools(server: McpServer, req: Request) {
       ])).describe('Events to subscribe to'),
       description: z.string().optional(),
     }),
+    annotations: { readOnlyHint: false },
   }, async (args) => {
     const result = await callRestApi({ method: 'POST', path: '/webhooks', body: args, ...creds });
     return formatResult(result);
@@ -317,6 +331,7 @@ export function registerTools(server: McpServer, req: Request) {
     title: 'Get Profile',
     description: 'Get the current authenticated user profile.',
     inputSchema: z.object({}),
+    annotations: { readOnlyHint: true },
   }, async () => {
     const result = await callRestApi({ method: 'GET', path: '/me', ...creds });
     return formatResult(result);
