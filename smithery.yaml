@@ -1,0 +1,42 @@
+runtime: 'remote'
+url: 'https://mcp.cpz-lab.com/mcp'
+configSchema:
+  type: object
+  required:
+    - cpzKey
+    - cpzSecret
+  properties:
+    cpzKey:
+      type: string
+      title: 'CPZ API Key'
+      description: 'Create one at https://ai.cpz-lab.com/settings/api-keys'
+    cpzSecret:
+      type: string
+      title: 'CPZ API Secret'
+      format: password
+      description: 'Paired with CPZ API Key'
+exampleConfig:
+  cpzKey: 'cpz_xxxxxxxxxxxxxxxxxxxx'
+  cpzSecret: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+metadata:
+  name: CPZAI
+  description: |
+    Build, backtest, and deploy quantitative trading strategies from your AI agent.
+    List strategies, run backtests, place orders through Alpaca / Interactive Brokers / FIX,
+    and manage portfolios. Paper-only by default; live trading requires explicit
+    per-strategy promotion.
+  homepage: https://ai.cpz-lab.com
+  documentation: https://github.com/CPZ-Lab/aquila-mcp-server#readme
+  categories:
+    - finance
+    - trading
+    - quant
+  tags:
+    - trading
+    - quant
+    - backtesting
+    - algorithmic-trading
+    - alpaca
+    - interactive-brokers
+    - agent
+    - finance
