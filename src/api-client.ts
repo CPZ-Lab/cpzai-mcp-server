@@ -1,5 +1,5 @@
 /**
- * HTTP client for the Aquila REST API.
+ * HTTP client for the CPZAI REST API.
  *
  * The MCP server authenticates with the user's CPZ API key and proxies
  * all tool calls to the REST API edge function.

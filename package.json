@@ -1,7 +1,7 @@
 {
-  "name": "@aquila/mcp-server",
+  "name": "@cpzai/mcp-server",
   "version": "1.0.0",
-  "description": "Aquila Quant Studio MCP server for AI agent access",
+  "description": "CPZAI MCP server for AI agent access",
   "type": "module",
   "scripts": {
     "build": "tsc",

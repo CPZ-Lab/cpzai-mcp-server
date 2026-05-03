@@ -90,7 +90,7 @@ Add to your Cursor MCP config (`.cursor/mcp.json`):
 ```json
 {
   "mcpServers": {
-    "aquila": {
+    "cpzai": {
       "url": "https://mcp.cpz-lab.com/mcp",
       "headers": {
         "X-CPZ-Key": "your_cpz_key_prefix",
@@ -108,7 +108,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "aquila": {
+    "cpzai": {
       "url": "https://mcp.cpz-lab.com/mcp",
       "headers": {
         "X-CPZ-Key": "your_cpz_key_prefix",
