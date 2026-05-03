@@ -11,12 +11,12 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/CPZ-Lab/aquila-mcp-server"><img src="https://img.shields.io/badge/language-TypeScript-blue.svg" alt="TypeScript"></a>
-  <a href="https://github.com/CPZ-Lab/aquila-mcp-server/actions/workflows/ci.yml"><img src="https://github.com/CPZ-Lab/aquila-mcp-server/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/CPZ-Lab/cpzai-mcp-server"><img src="https://img.shields.io/badge/language-TypeScript-blue.svg" alt="TypeScript"></a>
+  <a href="https://github.com/CPZ-Lab/cpzai-mcp-server/actions/workflows/ci.yml"><img src="https://github.com/CPZ-Lab/cpzai-mcp-server/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://img.shields.io/badge/MCP-v1.0-green"><img src="https://img.shields.io/badge/MCP-v1.0-green.svg" alt="MCP v1.0"></a>
   <a href="https://img.shields.io/badge/transport-Streamable_HTTP-orange"><img src="https://img.shields.io/badge/transport-Streamable_HTTP-orange.svg" alt="Streamable HTTP"></a>
   <a href="https://img.shields.io/badge/monitoring-Sentry-362d59"><img src="https://img.shields.io/badge/monitoring-Sentry-362d59.svg" alt="Sentry"></a>
-  <a href="https://github.com/CPZ-Lab/aquila-mcp-server"><img src="https://img.shields.io/badge/license-private-lightgrey.svg" alt="License"></a>
+  <a href="https://github.com/CPZ-Lab/cpzai-mcp-server"><img src="https://img.shields.io/badge/license-private-lightgrey.svg" alt="License"></a>
 </p>
 
 ---
