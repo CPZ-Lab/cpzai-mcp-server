@@ -1,0 +1,26 @@
+name: Sentry Webhook Handler
+
+on:
+  repository_dispatch:
+    types: [sentry-issue]
+
+jobs:
+  trigger-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger auto-fix workflow
+        env:
+          GH_TOKEN: ${{ secrets.GIT_BUG_REPORT_TOKEN || secrets.GITHUB_TOKEN }}
+          ISSUE_ID: ${{ github.event.client_payload.issue_id }}
+          ISSUE_TITLE: ${{ github.event.client_payload.title }}
+          ISSUE_STACKTRACE: ${{ github.event.client_payload.stacktrace }}
+          ISSUE_URL: ${{ github.event.client_payload.url }}
+          ISSUE_CULPRIT: ${{ github.event.client_payload.culprit }}
+        run: |
+          gh workflow run sentry-auto-fix.yml \
+            --repo CPZ-Lab/cpzai-mcp-server \
+            -f sentry_issue_id="$ISSUE_ID" \
+            -f title="$ISSUE_TITLE" \
+            -f stacktrace="$ISSUE_STACKTRACE" \
+            -f sentry_url="$ISSUE_URL" \
+            -f culprit="$ISSUE_CULPRIT"

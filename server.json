@@ -1,0 +1,52 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.cpz-lab/cpzai",
+  "title": "CPZAI",
+  "description": "Build, backtest, and deploy quantitative trading strategies. List strategies, run backtests, place orders through Alpaca / Interactive Brokers / FIX, and manage portfolios — all from your AI agent. Paper-only by default; live trading requires explicit per-strategy promotion.",
+  "websiteUrl": "https://ai.cpz-lab.com",
+  "repository": {
+    "url": "https://github.com/CPZ-Lab/cpzai-mcp-server",
+    "source": "github"
+  },
+  "version": "1.0.0",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.cpz-lab.com/mcp",
+      "headers": [
+        {
+          "name": "X-CPZ-Key",
+          "description": "CPZ platform API key (create one at https://ai.cpz-lab.com/settings/api-keys).",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "X-CPZ-Secret",
+          "description": "CPZ platform API secret (paired with X-CPZ-Key).",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
+  ],
+  "_meta": {
+    "io.modelcontextprotocol.registry/publisher-provided": {
+      "tool": "manual-publish",
+      "version": "1.0.0",
+      "categories": ["finance", "trading", "quant"],
+      "tags": [
+        "trading",
+        "quant",
+        "backtesting",
+        "algorithmic-trading",
+        "alpaca",
+        "interactive-brokers",
+        "hedge-fund",
+        "agent",
+        "finance",
+        "portfolio-management",
+        "risk-management"
+      ]
+    }
+  }
+}
