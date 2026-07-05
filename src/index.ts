@@ -3,7 +3,13 @@ import express from 'express';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { registerTools } from './tools.js';
-import { getOAuthMetadata, registerClient, createAuthCode, exchangeCode } from './oauth.js';
+import {
+  getOAuthMetadata,
+  registerClient,
+  createAuthCode,
+  exchangeCode,
+  isRedirectUriRegistered,
+} from './oauth.js';
 import { renderConsentPage } from './consent-page.js';
 import { renderPrivacyPolicy } from './privacy-page.js';
 import { callRestApi } from './api-client.js';
@@ -53,6 +59,17 @@ app.get('/oauth/authorize', (_req, res) => {
     res.status(400).send('Missing client_id or redirect_uri');
     return;
   }
+  // Never render the consent page (or build a Cancel link) for a redirect_uri
+  // that isn't registered to this client — that would let an attacker point the
+  // auth code / Cancel navigation at their own origin from a trusted domain.
+  if (!isRedirectUriRegistered(q.client_id, q.redirect_uri)) {
+    res.status(400).send('Invalid client_id or unregistered redirect_uri.');
+    return;
+  }
+  if (q.code_challenge && q.code_challenge_method && q.code_challenge_method !== 'S256') {
+    res.status(400).send('Unsupported code_challenge_method (S256 required).');
+    return;
+  }
   res.type('html').send(renderConsentPage({
     clientId: q.client_id,
     redirectUri: q.redirect_uri,
@@ -64,6 +81,16 @@ app.get('/oauth/authorize', (_req, res) => {
 
 app.post('/oauth/authorize', async (req, res) => {
   const { client_id, redirect_uri, state, code_challenge, code_challenge_method, api_key, api_secret } = req.body;
+
+  // Reject an unregistered redirect_uri BEFORE minting a code or redirecting.
+  if (client_id && redirect_uri && !isRedirectUriRegistered(client_id, redirect_uri)) {
+    res.status(400).send('Invalid client_id or unregistered redirect_uri.');
+    return;
+  }
+  if (code_challenge && code_challenge_method && code_challenge_method !== 'S256') {
+    res.status(400).send('Unsupported code_challenge_method (S256 required).');
+    return;
+  }
 
   if (!client_id || !redirect_uri || !api_key || !api_secret) {
     res.type('html').send(renderConsentPage({
@@ -99,14 +126,32 @@ app.post('/oauth/authorize', async (req, res) => {
 
 app.options('/oauth/token', cors, (_req, res) => res.sendStatus(204));
 app.post('/oauth/token', cors, (req, res) => {
-  const { grant_type, code, client_id, redirect_uri, code_verifier } = req.body;
+  const { grant_type, code, client_id, redirect_uri, code_verifier, client_secret } = req.body;
+  // Support HTTP Basic client auth (client_secret_basic) in addition to _post.
+  let basicSecret: string | undefined;
+  let basicId: string | undefined;
+  const authz = req.headers['authorization'];
+  if (typeof authz === 'string' && authz.startsWith('Basic ')) {
+    const decoded = Buffer.from(authz.slice(6), 'base64').toString('utf8');
+    const idx = decoded.indexOf(':');
+    if (idx > 0) {
+      basicId = decoded.slice(0, idx);
+      basicSecret = decoded.slice(idx + 1);
+    }
+  }
 
   if (grant_type !== 'authorization_code') {
     res.status(400).json({ error: 'unsupported_grant_type' });
     return;
   }
 
-  const token = exchangeCode(code, client_id, redirect_uri, code_verifier);
+  const token = exchangeCode(
+    code,
+    client_id || basicId,
+    redirect_uri,
+    code_verifier,
+    client_secret || basicSecret,
+  );
   if (!token) {
     res.status(400).json({ error: 'invalid_grant' });
     return;

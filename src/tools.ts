@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Request } from 'express';
 import { callRestApi } from './api-client.js';
+import { resolveAccessToken } from './oauth.js';
 
 /**
  * Extract CPZ API credentials from the incoming HTTP request.
@@ -16,11 +17,17 @@ function extractCredentials(req: Request): { apiKey: string; apiSecret: string }
   }
 
   const auth = req.headers['authorization'] as string | undefined;
-  if (auth?.startsWith('Bearer ') && auth.includes('cpz_key_')) {
+  if (auth?.startsWith('Bearer ')) {
     const token = auth.slice(7);
-    const dotIndex = token.indexOf('.');
-    if (dotIndex > 0) {
-      return { apiKey: token.slice(0, dotIndex), apiSecret: token.slice(dotIndex + 1) };
+    // Preferred: opaque OAuth access token resolved to credentials server-side.
+    const resolved = resolveAccessToken(token);
+    if (resolved) return resolved;
+    // Backward-compat: a direct `cpz_key_*.secret` bearer.
+    if (token.includes('cpz_key_')) {
+      const dotIndex = token.indexOf('.');
+      if (dotIndex > 0) {
+        return { apiKey: token.slice(0, dotIndex), apiSecret: token.slice(dotIndex + 1) };
+      }
     }
   }
 
