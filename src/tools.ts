@@ -236,6 +236,34 @@ export function registerTools(server: McpServer, req: Request) {
     return formatResult(result);
   });
 
+  server.registerTool('get_bars', {
+    title: 'Get Historical Bars',
+    description: 'Fetch historical OHLCV bars for one or more symbols. Supports intraday (1Min–4Hour) and daily/weekly/monthly timeframes over a date range — the historical data the real-time quote tool cannot provide.',
+    inputSchema: z.object({
+      symbols: z.array(z.string()).describe('Ticker symbols (e.g. ["SOXX", "SOXL"])'),
+      timeframe: z.enum(['1Min', '5Min', '15Min', '30Min', '1Hour', '2Hour', '4Hour', '1Day', '1Week', '1Month'])
+        .optional().describe('Bar size (default 1Day)'),
+      start: z.string().optional().describe('Start date/time, ISO 8601 (e.g. 2024-01-01)'),
+      end: z.string().optional().describe('End date/time, ISO 8601 (e.g. 2026-06-30)'),
+      limit: z.number().optional().describe('Max bars per symbol (default 1000, max 10000)'),
+    }),
+    annotations: { readOnlyHint: true },
+  }, async (args) => {
+    const result = await callRestApi({
+      method: 'POST',
+      path: '/bars',
+      body: {
+        symbols: args.symbols,
+        timeframe: args.timeframe,
+        start: args.start,
+        end: args.end,
+        limit: args.limit,
+      },
+      ...creds,
+    });
+    return formatResult(result);
+  });
+
   // ── Risk ────────────────────────────────────────────────────
 
   server.registerTool('compute_risk', {
