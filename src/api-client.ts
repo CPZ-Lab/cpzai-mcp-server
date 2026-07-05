@@ -45,6 +45,21 @@ export async function callRestApi(opts: ApiCallOptions): Promise<ApiResult> {
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
 
-  const data = await resp.json().catch(() => ({ error: 'Failed to parse response' }));
-  return { ok: resp.ok, status: resp.status, data };
+  // An unparseable body is a HARD failure — never paper over it with the
+  // upstream status. If we returned ok:true here, a caller (e.g. list_positions)
+  // could read a parse failure as an empty-but-successful result and conclude
+  // "no positions" when the truth is "we don't know". Fail loudly instead.
+  const PARSE_FAILED = Symbol('parse_failed');
+  const parsed: unknown = await resp.json().catch(() => PARSE_FAILED);
+  if (parsed === PARSE_FAILED) {
+    return {
+      ok: false,
+      status: resp.status,
+      data: {
+        error: 'Upstream response could not be parsed as JSON. The call did NOT return valid data — do not treat this as an empty result.',
+        upstream_status: resp.status,
+      },
+    };
+  }
+  return { ok: resp.ok, status: resp.status, data: parsed };
 }
