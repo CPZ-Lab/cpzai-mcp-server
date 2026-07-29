@@ -8,6 +8,16 @@ export function renderConsentPage(params: {
 }): string {
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+  // Keyless path: hand the OAuth params to the CPZAI app, which authenticates
+  // the user with their existing session, mints a managed key on approval, and
+  // form-posts back to POST /oauth/authorize. Client + redirect URI are
+  // re-validated there, so this link carries no trust.
+  const keylessQs = new URLSearchParams({ client_id: params.clientId, redirect_uri: params.redirectUri });
+  if (params.state) keylessQs.set('state', params.state);
+  if (params.codeChallenge) keylessQs.set('code_challenge', params.codeChallenge);
+  if (params.codeChallengeMethod) keylessQs.set('code_challenge_method', params.codeChallengeMethod);
+  const keylessUrl = `https://ai.cpz-lab.com/mcp-authorize?${keylessQs.toString()}`;
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -69,6 +79,15 @@ export function renderConsentPage(params: {
       cursor: pointer; transition: opacity 0.15s;
     }
     .btn:hover { opacity: 0.9; }
+    .btn-link { display: block; text-align: center; text-decoration: none; }
+    .fallback { margin-top: 16px; }
+    .fallback summary {
+      cursor: pointer; font-size: 13px; color: #737373; text-align: center;
+      list-style: none; padding: 4px 0;
+    }
+    .fallback summary::-webkit-details-marker { display: none; }
+    .fallback summary:hover { color: #a3a3a3; }
+    .fallback form { margin-top: 16px; }
     .cancel {
       display: block; text-align: center; margin-top: 12px;
       color: #737373; text-decoration: none; font-size: 13px;
@@ -87,34 +106,39 @@ export function renderConsentPage(params: {
     <h1>Authorize access</h1>
     <p class="subtitle">Connect your CPZAI account to Claude</p>
     ${params.error ? `<div class="error">${esc(params.error)}</div>` : ''}
-    <form method="POST" action="/oauth/authorize">
-      <input type="hidden" name="client_id" value="${esc(params.clientId)}">
-      <input type="hidden" name="redirect_uri" value="${esc(params.redirectUri)}">
-      ${params.state ? `<input type="hidden" name="state" value="${esc(params.state)}">` : ''}
-      ${params.codeChallenge ? `<input type="hidden" name="code_challenge" value="${esc(params.codeChallenge)}">` : ''}
-      ${params.codeChallengeMethod ? `<input type="hidden" name="code_challenge_method" value="${esc(params.codeChallengeMethod)}">` : ''}
-      <div class="field">
-        <label for="api_key">API Key</label>
-        <input type="text" id="api_key" name="api_key" placeholder="cpz_key_..." required autocomplete="off">
-      </div>
-      <div class="field">
-        <label for="api_secret">API Secret</label>
-        <input type="password" id="api_secret" name="api_secret" placeholder="Your API secret" required autocomplete="off">
-      </div>
-      <div class="permissions">
-        <h3>This will allow Claude to</h3>
-        <ul>
-          <li>View and manage your trading strategies</li>
-          <li>Access market data and portfolio positions</li>
-          <li>Run backtests and risk analytics</li>
-          <li>Place trades on your behalf</li>
-        </ul>
-      </div>
-      <button type="submit" class="btn">Authorize</button>
-      <a href="${esc(params.redirectUri)}?error=access_denied${params.state ? `&state=${esc(params.state)}` : ''}" class="cancel">Cancel</a>
-    </form>
+    <div class="permissions">
+      <h3>This will allow Claude to</h3>
+      <ul>
+        <li>View and manage your trading strategies</li>
+        <li>Access market data and portfolio positions</li>
+        <li>Run backtests and risk analytics</li>
+        <li>Place trades on your behalf</li>
+      </ul>
+    </div>
+    <a href="${esc(keylessUrl)}" class="btn btn-link">Continue with CPZAI</a>
+    <details class="fallback">
+      <summary>Authorize with an API key instead</summary>
+      <form method="POST" action="/oauth/authorize">
+        <input type="hidden" name="client_id" value="${esc(params.clientId)}">
+        <input type="hidden" name="redirect_uri" value="${esc(params.redirectUri)}">
+        ${params.state ? `<input type="hidden" name="state" value="${esc(params.state)}">` : ''}
+        ${params.codeChallenge ? `<input type="hidden" name="code_challenge" value="${esc(params.codeChallenge)}">` : ''}
+        ${params.codeChallengeMethod ? `<input type="hidden" name="code_challenge_method" value="${esc(params.codeChallengeMethod)}">` : ''}
+        <div class="field">
+          <label for="api_key">API Key</label>
+          <input type="text" id="api_key" name="api_key" placeholder="cpz_key_..." required autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="api_secret">API Secret</label>
+          <input type="password" id="api_secret" name="api_secret" placeholder="Your API secret" required autocomplete="off">
+        </div>
+        <button type="submit" class="btn">Authorize</button>
+      </form>
+    </details>
+    <a href="${esc(params.redirectUri)}?error=access_denied${params.state ? `&state=${esc(params.state)}` : ''}" class="cancel">Cancel</a>
     <div class="help">
-      Don't have an API key? <a href="https://ai.cpz-lab.com/settings" target="_blank">Create one at cpz-lab.com</a>
+      Signing in issues a managed, revocable credential — no keys to copy. Manage it any time at
+      <a href="https://ai.cpz-lab.com/settings" target="_blank">ai.cpz-lab.com</a>
     </div>
   </div>
 </body>
