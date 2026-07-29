@@ -2,9 +2,10 @@ import * as Sentry from '@sentry/node';
 import express from 'express';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { registerTools } from './tools.js';
+import { registerTools, extractCredentials } from './tools.js';
 import {
   getOAuthMetadata,
+  getProtectedResourceMetadata,
   registerClient,
   createAuthCode,
   exchangeCode,
@@ -46,6 +47,16 @@ app.get('/health', (_req, res) => {
 app.get('/.well-known/oauth-authorization-server', cors, (_req, res) => {
   res.json(getOAuthMetadata());
 });
+
+// RFC 9728 — MCP clients resolve this (root and /mcp path-suffix variants)
+// from the WWW-Authenticate challenge to find the authorization server.
+app.get(
+  ['/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/mcp'],
+  cors,
+  (_req, res) => {
+    res.json(getProtectedResourceMetadata());
+  },
+);
 
 app.options('/oauth/register', cors, (_req, res) => res.sendStatus(204));
 app.post('/oauth/register', cors, (req, res) => {
@@ -169,6 +180,27 @@ app.get('/privacy', (_req, res) => {
 // ── MCP ─────────────────────────────────────────────────────────
 
 app.post('/mcp', async (req, res) => {
+  // Challenge unauthenticated requests at the HTTP layer (MCP auth spec).
+  // Returning 200 with in-band tool errors — the old behavior — meant OAuth-
+  // capable clients never learned they should authenticate, so the only way
+  // to use the server was pasting API keys into client config.
+  const creds = extractCredentials(req);
+  if (!creds.apiKey || !creds.apiSecret) {
+    res
+      .status(401)
+      .set(
+        'WWW-Authenticate',
+        `Bearer realm="CPZAI MCP", resource_metadata="${process.env.MCP_BASE_URL || 'https://mcp.cpz-lab.com'}/.well-known/oauth-protected-resource"`,
+      )
+      .set('Access-Control-Expose-Headers', 'WWW-Authenticate')
+      .json({
+        error: 'unauthorized',
+        error_description:
+          'Authenticate via OAuth (authorization server at /.well-known/oauth-authorization-server) or provide X-CPZ-Key/X-CPZ-Secret headers.',
+      });
+    return;
+  }
+
   const server = new McpServer({
     name: 'cpzai-mcp-server',
     version: '1.0.0',

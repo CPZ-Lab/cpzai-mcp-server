@@ -8,7 +8,7 @@ import { resolveAccessToken } from './oauth.js';
  * Extract CPZ API credentials from the incoming HTTP request.
  * Agents pass their API key/secret in headers, which we forward to the REST API.
  */
-function extractCredentials(req: Request): { apiKey: string; apiSecret: string } {
+export function extractCredentials(req: Request): { apiKey: string; apiSecret: string } {
   const cpzKey = req.headers['x-cpz-key'] as string | undefined;
   const cpzSecret = req.headers['x-cpz-secret'] as string | undefined;
 

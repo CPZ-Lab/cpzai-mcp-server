@@ -1,15 +1,5 @@
 import crypto from 'node:crypto';
 
-interface AuthCodeEntry {
-  clientId: string;
-  apiKey: string;
-  apiSecret: string;
-  redirectUri: string;
-  codeChallenge?: string;
-  codeChallengeMethod?: string;
-  expiresAt: number;
-}
-
 interface ClientEntry {
   clientId: string;
   clientSecret: string;
@@ -17,15 +7,11 @@ interface ClientEntry {
   clientName?: string;
 }
 
-const authCodes = new Map<string, AuthCodeEntry>();
-const clients = new Map<string, ClientEntry>();
-
-setInterval(() => {
-  const now = Date.now();
-  for (const [code, entry] of authCodes) {
-    if (entry.expiresAt < now) authCodes.delete(code);
-  }
-}, 60_000);
+// Best-effort auth-code replay guard. Codes are stateless (sealed), so this
+// per-task set only catches replays that land on the same task; the hard
+// defense against a stolen code is the PKCE binding sealed inside it.
+const usedCodes = new Set<string>();
+setInterval(() => usedCodes.clear(), 10 * 60 * 1000);
 
 const BASE_URL = process.env.MCP_BASE_URL || 'https://mcp.cpz-lab.com';
 const ACCESS_TOKEN_TTL_MS = 12 * 60 * 60 * 1000; // 12h — short-lived, re-issued on demand
@@ -53,6 +39,22 @@ function ctEq(a: string, b: string): boolean {
   return crypto.timingSafeEqual(ab, bb);
 }
 
+/**
+ * RFC 9728 Protected Resource Metadata. MCP clients (Claude Code, claude.ai)
+ * discover the authorization server from this document after receiving a 401
+ * challenge on /mcp — without it, the OAuth flow never starts.
+ */
+export function getProtectedResourceMetadata() {
+  return {
+    resource: `${BASE_URL}/mcp`,
+    authorization_servers: [BASE_URL],
+    scopes_supported: ['read', 'write', 'trade'],
+    bearer_methods_supported: ['header'],
+    resource_name: 'CPZAI MCP Server',
+    resource_documentation: 'https://ai.cpz-lab.com',
+  };
+}
+
 export function getOAuthMetadata() {
   return {
     issuer: BASE_URL,
@@ -67,17 +69,22 @@ export function getOAuthMetadata() {
   };
 }
 
+// Client registrations are STATELESS: the registration record (redirect_uris,
+// name) is sealed into the client_id itself with AES-256-GCM, and the
+// client_secret is an HMAC of the client_id under the same server key. Any ECS
+// task can validate a client another task registered — in-memory registries
+// broke DCR whenever register/authorize/token hit different tasks.
 export function registerClient(body: Record<string, unknown>): Record<string, unknown> {
-  const clientId = `cpz_${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
-  const clientSecret = crypto.randomBytes(32).toString('hex');
   const redirectUris = (body.redirect_uris as string[]) || [];
+  const clientName = (body.client_name as string) || undefined;
 
-  clients.set(clientId, {
-    clientId,
-    clientSecret,
-    redirectUris,
-    clientName: (body.client_name as string) || undefined,
-  });
+  const payload = JSON.stringify({ r: redirectUris, n: clientName, iat: Date.now() });
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', TOKEN_KEY, iv);
+  const ct = Buffer.concat([cipher.update(payload, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  const clientId = `cpzc_${Buffer.concat([iv, tag, ct]).toString('base64url')}`;
+  const clientSecret = deriveClientSecret(clientId);
 
   return {
     client_id: clientId,
@@ -92,8 +99,31 @@ export function registerClient(body: Record<string, unknown>): Record<string, un
   };
 }
 
+function deriveClientSecret(clientId: string): string {
+  return crypto.createHmac('sha256', TOKEN_KEY).update(`client-secret:${clientId}`).digest('hex');
+}
+
 export function getClient(clientId: string): ClientEntry | undefined {
-  return clients.get(clientId);
+  if (!clientId.startsWith('cpzc_')) return undefined;
+  try {
+    const raw = Buffer.from(clientId.slice(5), 'base64url');
+    const iv = raw.subarray(0, 12);
+    const tag = raw.subarray(12, 28);
+    const ct = raw.subarray(28);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', TOKEN_KEY, iv);
+    decipher.setAuthTag(tag);
+    const payload = JSON.parse(
+      Buffer.concat([decipher.update(ct), decipher.final()]).toString('utf8'),
+    );
+    return {
+      clientId,
+      clientSecret: deriveClientSecret(clientId),
+      redirectUris: Array.isArray(payload.r) ? payload.r.map(String) : [],
+      clientName: payload.n ? String(payload.n) : undefined,
+    };
+  } catch {
+    return undefined; // wrong key, tampered, or a pre-stateless client_id
+  }
 }
 
 /**
@@ -103,11 +133,15 @@ export function getClient(clientId: string): ClientEntry | undefined {
  * norm for MCP, so an unknown client is rejected outright.
  */
 export function isRedirectUriRegistered(clientId: string, redirectUri: string): boolean {
-  const c = clients.get(clientId);
+  const c = getClient(clientId);
   if (!c) return false;
   return c.redirectUris.includes(redirectUri);
 }
 
+// Auth codes are STATELESS too: the grant (client binding, credentials, PKCE
+// challenge, expiry) is sealed into the code itself, so the token exchange can
+// land on any task. Single-use is enforced best-effort per task via usedCodes;
+// the sealed PKCE challenge is what makes a leaked code unusable.
 export function createAuthCode(
   clientId: string,
   apiKey: string,
@@ -116,17 +150,45 @@ export function createAuthCode(
   codeChallenge?: string,
   codeChallengeMethod?: string,
 ): string {
-  const code = crypto.randomBytes(32).toString('base64url');
-  authCodes.set(code, {
-    clientId,
-    apiKey,
-    apiSecret,
-    redirectUri,
-    codeChallenge,
-    codeChallengeMethod,
-    expiresAt: Date.now() + 5 * 60 * 1000,
+  const payload = JSON.stringify({
+    c: clientId,
+    k: apiKey,
+    s: apiSecret,
+    r: redirectUri,
+    ch: codeChallenge,
+    chm: codeChallengeMethod,
+    exp: Date.now() + 5 * 60 * 1000,
   });
-  return code;
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', TOKEN_KEY, iv);
+  const ct = Buffer.concat([cipher.update(payload, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `cpza_${Buffer.concat([iv, tag, ct]).toString('base64url')}`;
+}
+
+interface AuthCodePayload {
+  c: string;
+  k: string;
+  s: string;
+  r: string;
+  ch?: string;
+  chm?: string;
+  exp: number;
+}
+
+function unsealAuthCode(code: string): AuthCodePayload | null {
+  if (!code?.startsWith('cpza_')) return null;
+  try {
+    const raw = Buffer.from(code.slice(5), 'base64url');
+    const iv = raw.subarray(0, 12);
+    const tag = raw.subarray(12, 28);
+    const ct = raw.subarray(28);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', TOKEN_KEY, iv);
+    decipher.setAuthTag(tag);
+    return JSON.parse(Buffer.concat([decipher.update(ct), decipher.final()]).toString('utf8'));
+  } catch {
+    return null;
+  }
 }
 
 function verifyPKCE(codeVerifier: string, codeChallenge: string): boolean {
@@ -149,31 +211,28 @@ export function exchangeCode(
   codeVerifier?: string,
   clientSecret?: string,
 ): { access_token: string; token_type: string; expires_in: number } | null {
-  const entry = authCodes.get(code);
+  const entry = unsealAuthCode(code);
   if (!entry) return null;
-  if (entry.expiresAt < Date.now()) {
-    authCodes.delete(code);
-    return null;
-  }
-  if (entry.clientId !== clientId) return null;
-  if (entry.redirectUri !== redirectUri) return null;
+  if (usedCodes.has(code)) return null;
+  if (entry.exp < Date.now()) return null;
+  if (entry.c !== clientId) return null;
+  if (entry.r !== redirectUri) return null;
 
-  const client = clients.get(clientId);
+  const client = getClient(clientId);
   if (!client || !client.redirectUris.includes(redirectUri)) return null;
 
   const hasValidSecret = !!clientSecret && ctEq(clientSecret, client.clientSecret);
-  const hasValidPkce =
-    !!entry.codeChallenge && !!codeVerifier && verifyPKCE(codeVerifier, entry.codeChallenge);
+  const hasValidPkce = !!entry.ch && !!codeVerifier && verifyPKCE(codeVerifier, entry.ch);
 
   // If the code was bound to a PKCE challenge, the verifier must match.
-  if (entry.codeChallenge && !hasValidPkce) return null;
+  if (entry.ch && !hasValidPkce) return null;
   // Require SOME proof of the client: secret or PKCE.
   if (!hasValidSecret && !hasValidPkce) return null;
 
-  authCodes.delete(code);
+  usedCodes.add(code);
 
   return {
-    access_token: sealToken(entry.apiKey, entry.apiSecret),
+    access_token: sealToken(entry.k, entry.s),
     token_type: 'Bearer',
     expires_in: Math.floor(ACCESS_TOKEN_TTL_MS / 1000),
   };
