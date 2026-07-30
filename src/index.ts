@@ -77,7 +77,17 @@ app.get('/oauth/authorize', (_req, res) => {
     res.status(400).send('Invalid client_id or unregistered redirect_uri.');
     return;
   }
-  if (q.code_challenge && q.code_challenge_method && q.code_challenge_method !== 'S256') {
+  // PKCE is MANDATORY (OAuth 2.1 / MCP auth spec), and our AS metadata
+  // advertises code_challenge_methods_supported: ['S256']. Reject a missing
+  // challenge here rather than rendering a consent page whose code can only be
+  // redeemed with the DCR-issued client_secret — a public client (every MCP
+  // client is one) would otherwise complete a sign-in for a code that carries
+  // no interception protection.
+  if (!q.code_challenge) {
+    res.status(400).send('PKCE required (code_challenge with code_challenge_method=S256).');
+    return;
+  }
+  if (q.code_challenge_method !== 'S256') {
     res.status(400).send('Unsupported code_challenge_method (S256 required).');
     return;
   }
@@ -98,7 +108,13 @@ app.post('/oauth/authorize', async (req, res) => {
     res.status(400).send('Invalid client_id or unregistered redirect_uri.');
     return;
   }
-  if (code_challenge && code_challenge_method && code_challenge_method !== 'S256') {
+  // Same mandatory-PKCE rule as the GET handler: a form POST is the second
+  // half of the same flow and must not be a way around it.
+  if (!code_challenge) {
+    res.status(400).send('PKCE required (code_challenge with code_challenge_method=S256).');
+    return;
+  }
+  if (code_challenge_method !== 'S256') {
     res.status(400).send('Unsupported code_challenge_method (S256 required).');
     return;
   }
