@@ -54,7 +54,7 @@ export function renderConsentPage(params: {
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 96px 16px 48px;
+      padding: 48px 16px;
       position: relative;
       overflow-x: hidden;
     }
@@ -95,11 +95,6 @@ export function renderConsentPage(params: {
     }
     @media (max-width: 767px) { .watermark { display: none; } }
 
-    /* Top-left brand lockup, same as the app navbar */
-    .brandbar { position: absolute; top: 0; left: 0; padding: 24px; z-index: 20; }
-    .brandbar a { text-decoration: none; display: inline-flex; flex-direction: column; align-items: flex-start; gap: 4px; }
-    .brandbar img { height: 40px; width: 40px; object-fit: contain; filter: brightness(0) invert(1); transition: transform 0.3s; }
-    .brandbar a:hover img { transform: scale(1.1); }
     .wordmark { font-size: 14px; font-weight: 700; color: #fff; letter-spacing: -0.02em; }
     .wordmark i { font-style: normal; color: var(--brand); }
 
@@ -128,11 +123,14 @@ export function renderConsentPage(params: {
       padding: 12px 14px; border-radius: 10px; margin-bottom: 20px; font-size: 13px; line-height: 1.5;
     }
 
-    .scopes { display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; }
-    .scope { display: flex; align-items: flex-start; gap: 12px; }
-    .scope svg { flex-shrink: 0; width: 18px; height: 18px; margin-top: 1px; color: var(--brand); }
-    .scope-label { font-size: 14px; font-weight: 600; color: var(--fg); line-height: 1.3; }
-    .scope-detail { font-size: 13px; color: var(--muted); line-height: 1.45; margin-top: 2px; }
+    /* Typographic scope list — no iconography. */
+    .scopes { margin-bottom: 20px; border-top: 1px solid var(--line); }
+    .scope { padding: 14px 0; border-bottom: 1px solid var(--line); }
+    .scope-label {
+      font-size: 11px; font-weight: 600; color: var(--brand);
+      text-transform: uppercase; letter-spacing: 0.08em; line-height: 1;
+    }
+    .scope-detail { font-size: 13px; color: var(--muted); line-height: 1.5; margin-top: 6px; }
 
     .note {
       font-size: 12px; color: var(--faint); line-height: 1.55;
@@ -196,13 +194,6 @@ export function renderConsentPage(params: {
   <div class="grid"></div>
   <div class="watermark"><img src="${LOGO}" alt=""></div>
 
-  <div class="brandbar">
-    <a href="https://ai.cpz-lab.com">
-      <img src="${LOGO}" alt="CPZAI">
-      <span class="wordmark">CPZ<i>AI</i></span>
-    </a>
-  </div>
-
   <div class="card">
     <div class="card-logo">
       <img src="${LOGO}" alt="CPZAI">
@@ -213,25 +204,16 @@ export function renderConsentPage(params: {
     ${params.error ? `<div class="error">${esc(params.error)}</div>` : ''}
     <div class="scopes">
       <div class="scope">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
-        <div>
-          <div class="scope-label">Read</div>
-          <div class="scope-detail">Strategies, positions, orders, market data, and risk snapshots</div>
-        </div>
+        <div class="scope-label">Read</div>
+        <div class="scope-detail">Strategies, positions, orders, market data, and risk snapshots</div>
       </div>
       <div class="scope">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9-5 5-4-4-3 3"/></svg>
-        <div>
-          <div class="scope-label">Write</div>
-          <div class="scope-detail">Create and update strategies, run backtests, manage webhooks</div>
-        </div>
+        <div class="scope-label">Write</div>
+        <div class="scope-detail">Create and update strategies, run backtests, manage webhooks</div>
       </div>
       <div class="scope">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 8 4 4-4 4"/><path d="M2 12h20"/><path d="m6 16-4-4 4-4"/></svg>
-        <div>
-          <div class="scope-label">Trade</div>
-          <div class="scope-detail">Place orders through your connected brokers, subject to your pre-trade guards</div>
-        </div>
+        <div class="scope-label">Trade</div>
+        <div class="scope-detail">Place orders through your connected brokers, subject to your pre-trade guards</div>
       </div>
     </div>
     <div class="note">
