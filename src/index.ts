@@ -42,6 +42,16 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'cpzai-mcp-server', timestamp: new Date().toISOString() });
 });
 
+// Domain ownership proof for the MCP Registry (registry.modelcontextprotocol.io).
+// The registry fetches this file and verifies a signed timestamp against the
+// public key, which is what authorises publishing under the com.cpz-lab.mcp
+// namespace. Public key only — the private half never leaves our secret store.
+const MCP_REGISTRY_AUTH_KEY =
+  process.env.MCP_REGISTRY_AUTH_KEY || 'v=MCPv1; k=ed25519; p=TZUiqu6b12nVGzjiRF+10lYCvBikZ5MQSVUW+GOFQZ8=';
+app.get('/.well-known/mcp-registry-auth', cors, (_req, res) => {
+  res.type('text/plain').send(MCP_REGISTRY_AUTH_KEY);
+});
+
 // ── OAuth 2.0 ───────────────────────────────────────────────────
 
 app.get('/.well-known/oauth-authorization-server', cors, (_req, res) => {
