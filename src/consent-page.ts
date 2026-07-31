@@ -18,104 +18,228 @@ export function renderConsentPage(params: {
   if (params.codeChallengeMethod) keylessQs.set('code_challenge_method', params.codeChallengeMethod);
   const keylessUrl = `https://ai.cpz-lab.com/mcp-authorize?${keylessQs.toString()}`;
 
+  // The app's own logo asset. Served from the CPZAI web app so the consent page
+  // and the sign-in page it hands off to are visually identical.
+  const LOGO = 'https://ai.cpz-lab.com/uploads/LogotransparenterHintergrund.png';
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark">
   <title>Authorize CPZAI</title>
+  <link rel="icon" type="image/png" href="${LOGO}">
   <style>
+    /* Design tokens mirror the CPZAI web app sign-in page (ai.cpz-lab.com/auth):
+       #0a0a0a base, #0a0f18 gradient mid, #0c99fa brand accent. */
+    :root {
+      --bg: #0a0a0a;
+      --bg-mid: #0a0f18;
+      --brand: #0c99fa;
+      --fg: #f5f5f5;
+      --muted: rgba(245, 245, 245, 0.6);
+      --faint: rgba(245, 245, 245, 0.38);
+      --line: rgba(255, 255, 255, 0.08);
+      --card: rgba(255, 255, 255, 0.028);
+    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { min-height: 100%; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #0a0a0a;
-      color: #e5e5e5;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
       min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
       display: flex;
       align-items: center;
       justify-content: center;
+      padding: 96px 16px 48px;
+      position: relative;
+      overflow-x: hidden;
     }
+    /* Layered background: gradient wash + brand glows + grid, matching /auth */
+    .bg { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+    .bg-gradient { background: linear-gradient(to bottom right, #0a0a0a, var(--bg-mid), #0a0a0a); }
+    .glow { position: fixed; border-radius: 9999px; pointer-events: none; z-index: 0; }
+    .glow-tr {
+      top: 0; right: 0; width: 700px; height: 700px;
+      background: rgba(12, 153, 250, 0.05);
+      filter: blur(180px); transform: translate(25%, -25%);
+    }
+    .glow-bl {
+      bottom: 0; left: 0; width: 500px; height: 500px;
+      background: rgba(12, 153, 250, 0.04);
+      filter: blur(140px); transform: translate(-25%, 25%);
+    }
+    .glow-c {
+      top: 50%; left: 50%; width: 600px; height: 600px;
+      background: rgba(12, 153, 250, 0.02);
+      filter: blur(160px); transform: translate(-50%, -50%);
+    }
+    .grid {
+      position: fixed; inset: 0; z-index: 0; opacity: 0.02; pointer-events: none;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+    }
+    /* Watermark logo, as on the sign-in page */
+    .watermark {
+      position: fixed; right: -10%; top: 50%; transform: translateY(-50%);
+      width: 600px; height: 600px; opacity: 0.03; z-index: 0; pointer-events: none;
+    }
+    .watermark img {
+      width: 100%; height: 100%; object-fit: contain;
+      filter: brightness(0) invert(1) sepia(1) saturate(5) hue-rotate(185deg);
+    }
+    @media (max-width: 767px) { .watermark { display: none; } }
+
+    /* Top-left brand lockup, same as the app navbar */
+    .brandbar { position: absolute; top: 0; left: 0; padding: 24px; z-index: 20; }
+    .brandbar a { text-decoration: none; display: inline-flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+    .brandbar img { height: 40px; width: 40px; object-fit: contain; filter: brightness(0) invert(1); transition: transform 0.3s; }
+    .brandbar a:hover img { transform: scale(1.1); }
+    .wordmark { font-size: 14px; font-weight: 700; color: #fff; letter-spacing: -0.02em; }
+    .wordmark i { font-style: normal; color: var(--brand); }
+
     .card {
-      background: #141414;
-      border: 1px solid #262626;
+      position: relative; z-index: 10;
+      width: 100%; max-width: 420px;
+      background: var(--card);
+      border: 1px solid var(--line);
       border-radius: 16px;
-      padding: 40px;
-      width: 100%;
-      max-width: 420px;
-      margin: 20px;
+      padding: 32px;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
     }
-    .logo {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 32px;
+    .card-logo { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 24px; }
+    .card-logo img { height: 56px; width: 56px; object-fit: contain; filter: brightness(0) invert(1); }
+    .card-logo .wordmark { font-size: 18px; }
+
+    h1 { font-size: 22px; font-weight: 600; color: #fff; letter-spacing: -0.02em; text-align: center; margin-bottom: 8px; }
+    .subtitle { color: var(--muted); font-size: 14px; line-height: 1.5; text-align: center; margin-bottom: 24px; }
+
+    .error {
+      background: rgba(239, 68, 68, 0.08);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+      padding: 12px 14px; border-radius: 10px; margin-bottom: 20px; font-size: 13px; line-height: 1.5;
     }
-    .logo img { width: 40px; height: 40px; border-radius: 8px; }
-    .logo span { font-size: 20px; font-weight: 600; color: #fff; }
-    h1 { font-size: 24px; font-weight: 600; color: #fff; margin-bottom: 8px; }
-    .subtitle { color: #737373; font-size: 14px; margin-bottom: 28px; }
-    .error { background: #331111; border: 1px solid #662222; color: #ff6b6b; padding: 12px; border-radius: 8px; margin-bottom: 20px; font-size: 13px; }
-    label { display: block; font-size: 13px; font-weight: 500; color: #a3a3a3; margin-bottom: 6px; }
-    input[type="text"], input[type="password"] {
-      width: 100%; padding: 10px 12px; background: #0a0a0a; border: 1px solid #262626;
-      border-radius: 8px; color: #fff; font-size: 14px; outline: none; transition: border-color 0.15s;
+
+    .scopes { display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; }
+    .scope { display: flex; align-items: flex-start; gap: 12px; }
+    .scope svg { flex-shrink: 0; width: 18px; height: 18px; margin-top: 1px; color: var(--brand); }
+    .scope-label { font-size: 14px; font-weight: 600; color: var(--fg); line-height: 1.3; }
+    .scope-detail { font-size: 13px; color: var(--muted); line-height: 1.45; margin-top: 2px; }
+
+    .note {
+      font-size: 12px; color: var(--faint); line-height: 1.55;
+      padding: 12px 14px; border-radius: 10px;
+      background: rgba(255, 255, 255, 0.02); border: 1px solid var(--line);
+      margin-bottom: 20px;
     }
-    input:focus { border-color: #525252; }
-    .field { margin-bottom: 16px; }
-    .permissions {
-      background: #0a0a0a; border: 1px solid #262626; border-radius: 8px;
-      padding: 16px; margin: 24px 0;
-    }
-    .permissions h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: #737373; margin-bottom: 12px; }
-    .permissions ul { list-style: none; }
-    .permissions li {
-      font-size: 13px; color: #a3a3a3; padding: 4px 0;
-      padding-left: 20px; position: relative;
-    }
-    .permissions li::before { content: '\\2713'; position: absolute; left: 0; color: #22c55e; font-weight: 600; }
+
     .btn {
-      width: 100%; padding: 12px; background: #fff; color: #000;
-      border: none; border-radius: 8px; font-size: 14px; font-weight: 600;
-      cursor: pointer; transition: opacity 0.15s;
+      display: block; width: 100%; padding: 12px 16px;
+      background: var(--brand); color: #fff;
+      border: none; border-radius: 10px;
+      font-size: 14px; font-weight: 600; font-family: inherit;
+      cursor: pointer; text-align: center; text-decoration: none;
+      transition: background 0.15s, transform 0.15s;
     }
-    .btn:hover { opacity: 0.9; }
-    .btn-link { display: block; text-align: center; text-decoration: none; }
-    .fallback { margin-top: 16px; }
+    .btn:hover { background: #0b8ae1; }
+    .btn:active { transform: translateY(1px); }
+
+    .fallback { margin-top: 14px; }
     .fallback summary {
-      cursor: pointer; font-size: 13px; color: #737373; text-align: center;
-      list-style: none; padding: 4px 0;
+      cursor: pointer; font-size: 13px; color: var(--muted); text-align: center;
+      list-style: none; padding: 6px 0;
     }
     .fallback summary::-webkit-details-marker { display: none; }
-    .fallback summary:hover { color: #a3a3a3; }
-    .fallback form { margin-top: 16px; }
-    .cancel {
-      display: block; text-align: center; margin-top: 12px;
-      color: #737373; text-decoration: none; font-size: 13px;
+    .fallback summary:hover { color: var(--fg); }
+    .fallback form { margin-top: 14px; }
+    label { display: block; font-size: 12px; font-weight: 500; color: var(--muted); margin-bottom: 6px; }
+    input[type="text"], input[type="password"] {
+      width: 100%; padding: 10px 12px;
+      background: rgba(0, 0, 0, 0.3); border: 1px solid var(--line);
+      border-radius: 10px; color: #fff; font-size: 14px; font-family: inherit;
+      outline: none; transition: border-color 0.15s;
     }
-    .cancel:hover { color: #a3a3a3; }
-    .help { text-align: center; margin-top: 20px; font-size: 12px; color: #525252; }
-    .help a { color: #737373; text-decoration: underline; }
+    input::placeholder { color: rgba(245, 245, 245, 0.25); }
+    input:focus { border-color: var(--brand); }
+    .field { margin-bottom: 14px; }
+    .btn-secondary { background: rgba(255,255,255,0.06); }
+    .btn-secondary:hover { background: rgba(255,255,255,0.1); }
+
+    .cancel {
+      display: block; text-align: center; margin-top: 14px;
+      color: var(--faint); text-decoration: none; font-size: 13px;
+    }
+    .cancel:hover { color: var(--muted); }
+    .help { text-align: center; margin-top: 20px; font-size: 12px; color: var(--faint); line-height: 1.5; }
+    .help a { color: var(--muted); text-decoration: none; border-bottom: 1px solid var(--line); }
+    .help a:hover { color: var(--brand); border-bottom-color: var(--brand); }
+
+    @media (max-width: 480px) {
+      body { padding: 88px 14px 32px; }
+      .card { padding: 24px 20px; }
+    }
   </style>
 </head>
 <body>
+  <div class="bg bg-gradient"></div>
+  <div class="glow glow-tr"></div>
+  <div class="glow glow-bl"></div>
+  <div class="glow glow-c"></div>
+  <div class="grid"></div>
+  <div class="watermark"><img src="${LOGO}" alt=""></div>
+
+  <div class="brandbar">
+    <a href="https://ai.cpz-lab.com">
+      <img src="${LOGO}" alt="CPZAI">
+      <span class="wordmark">CPZ<i>AI</i></span>
+    </a>
+  </div>
+
   <div class="card">
-    <div class="logo">
-      <img src="https://ai.cpz-lab.com/cpzai-icon.png" alt="CPZAI" onerror="this.style.display='none'">
-      <span>CPZAI</span>
+    <div class="card-logo">
+      <img src="${LOGO}" alt="CPZAI">
+      <span class="wordmark">CPZ<i>AI</i></span>
     </div>
     <h1>Authorize access</h1>
     <p class="subtitle">Connect your CPZAI account to Claude</p>
     ${params.error ? `<div class="error">${esc(params.error)}</div>` : ''}
-    <div class="permissions">
-      <h3>This will allow Claude to</h3>
-      <ul>
-        <li>View and manage your trading strategies</li>
-        <li>Access market data and portfolio positions</li>
-        <li>Run backtests and risk analytics</li>
-        <li>Place trades on your behalf</li>
-      </ul>
+    <div class="scopes">
+      <div class="scope">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
+        <div>
+          <div class="scope-label">Read</div>
+          <div class="scope-detail">Strategies, positions, orders, market data, and risk snapshots</div>
+        </div>
+      </div>
+      <div class="scope">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+        <div>
+          <div class="scope-label">Write</div>
+          <div class="scope-detail">Create and update strategies, run backtests, manage webhooks</div>
+        </div>
+      </div>
+      <div class="scope">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 8 4 4-4 4"/><path d="M2 12h20"/><path d="m6 16-4-4 4-4"/></svg>
+        <div>
+          <div class="scope-label">Trade</div>
+          <div class="scope-detail">Place orders through your connected brokers, subject to your pre-trade guards</div>
+        </div>
+      </div>
     </div>
-    <a href="${esc(keylessUrl)}" class="btn btn-link">Continue with CPZAI</a>
+    <div class="note">
+      Signing in issues a dedicated, revocable credential managed for you — no keys to copy.
+      Revoke it any time in Settings under API Keys ("Claude MCP (OAuth)"). Access tokens
+      expire automatically every 12 hours.
+    </div>
+    <a href="${esc(keylessUrl)}" class="btn">Continue with CPZAI</a>
     <details class="fallback">
       <summary>Authorize with an API key instead</summary>
       <form method="POST" action="/oauth/authorize">
@@ -126,19 +250,19 @@ export function renderConsentPage(params: {
         ${params.codeChallengeMethod ? `<input type="hidden" name="code_challenge_method" value="${esc(params.codeChallengeMethod)}">` : ''}
         <div class="field">
           <label for="api_key">API Key</label>
-          <input type="text" id="api_key" name="api_key" placeholder="cpz_key_..." required autocomplete="off">
+          <input type="text" id="api_key" name="api_key" placeholder="cpz_key_..." required autocomplete="off" spellcheck="false">
         </div>
         <div class="field">
           <label for="api_secret">API Secret</label>
           <input type="password" id="api_secret" name="api_secret" placeholder="Your API secret" required autocomplete="off">
         </div>
-        <button type="submit" class="btn">Authorize</button>
+        <button type="submit" class="btn btn-secondary">Authorize</button>
       </form>
     </details>
     <a href="${esc(params.redirectUri)}?error=access_denied${params.state ? `&state=${esc(params.state)}` : ''}" class="cancel">Cancel</a>
     <div class="help">
-      Signing in issues a managed, revocable credential — no keys to copy. Manage it any time at
-      <a href="https://ai.cpz-lab.com/settings" target="_blank">ai.cpz-lab.com</a>
+      Manage connected clients any time at
+      <a href="https://ai.cpz-lab.com/settings" target="_blank" rel="noopener">ai.cpz-lab.com</a>
     </div>
   </div>
 </body>

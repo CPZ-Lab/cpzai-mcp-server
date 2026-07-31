@@ -139,8 +139,21 @@ app.post('/oauth/authorize', async (req, res) => {
       state,
       codeChallenge: code_challenge,
       codeChallengeMethod: code_challenge_method,
-      error: 'Invalid API credentials. Check your key and secret at ai.cpz-lab.com/settings.',
+      // Only 401/403 actually mean "bad key". Reporting every upstream failure
+      // as a credential problem sent users hunting for a key that was fine
+      // while the real fault (a 404 from a misconfigured API base URL) stayed
+      // invisible. Say what actually happened.
+      error:
+        verify.status === 401 || verify.status === 403
+          ? 'Invalid API credentials. Check your key and secret at ai.cpz-lab.com/settings.'
+          : `Could not verify your account with the CPZ API (status ${verify.status}). This is a problem on our side, not with your credentials. Please try again, or contact support if it persists.`,
     }));
+    if (verify.status !== 401 && verify.status !== 403) {
+      console.error('[oauth] credential verification failed upstream', {
+        status: verify.status,
+        data: verify.data,
+      });
+    }
     return;
   }
 
