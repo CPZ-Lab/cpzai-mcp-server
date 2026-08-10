@@ -236,6 +236,111 @@ app.get('/privacy', (_req, res) => {
   res.type('html').send(renderPrivacyPolicy());
 });
 
+// ── Simons chat proxy ───────────────────────────────────────────
+//
+// The Simons gateway authenticates with X-CPZ-Key/X-CPZ-Secret headers and has
+// no bearer branch, so a client holding one of our sealed OAuth tokens cannot
+// chat at all. That left browser sign-in covering the platform tools but not
+// the feature people actually come for.
+//
+// This server is the only place that can unseal those tokens, and it already
+// proxies every tool call with the unsealed credentials. Streaming chat is the
+// same shape, so it belongs here too. The alternatives were worse: sharing
+// MCP_TOKEN_SECRET with the gateway would widen the blast radius of the one
+// key that protects every token, and an introspection endpoint would add a
+// round trip to the start of every streamed response.
+//
+// Credentials are unsealed per request and never logged.
+
+const SIMONS_UPSTREAM =
+  process.env.SIMONS_UPSTREAM_URL || 'https://api-ai.cpz-lab.com/cpz/simons';
+
+app.options('/simons/*', cors, (_req, res) => res.sendStatus(204));
+
+app.post(['/simons/stream', '/simons/chat'], cors, async (req, res) => {
+  const creds = extractCredentials(req);
+  if (!creds.apiKey || !creds.apiSecret) {
+    res
+      .status(401)
+      .set('WWW-Authenticate', `Bearer resource_metadata="${process.env.MCP_BASE_URL || 'https://mcp.cpz-lab.com'}/.well-known/oauth-protected-resource"`)
+      .json({ error: 'unauthorized', error_description: 'Sign in first.' });
+    return;
+  }
+
+  const streaming = req.path.endsWith('/stream');
+  const upstream = `${SIMONS_UPSTREAM}/${streaming ? 'stream' : 'chat'}`;
+
+  // Two minutes matches the gateway's own ceiling. Without an explicit abort a
+  // hung upstream would hold the connection until the platform kills it.
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120_000);
+  // If the caller hangs up, stop pulling from upstream rather than streaming
+  // into a closed socket.
+  req.on('close', () => controller.abort());
+
+  try {
+    const response = await fetch(upstream, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: streaming ? 'text/event-stream' : 'application/json',
+        'X-CPZ-Key': creds.apiKey,
+        'X-CPZ-Secret': creds.apiSecret,
+      },
+      body: JSON.stringify(req.body ?? {}),
+      signal: controller.signal,
+    });
+
+    // Errors must be surfaced with their real status, before any SSE headers
+    // are written: once the response is an event stream the status is fixed,
+    // and a 402 would reach the client as a stream that simply ends.
+    if (!response.ok || !streaming) {
+      const text = await response.text();
+      clearTimeout(timeout);
+      res.status(response.status).type(response.headers.get('Content-Type') || 'application/json').send(text);
+      return;
+    }
+
+    res.status(200).set({
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+
+    const body = response.body;
+    if (!body) {
+      clearTimeout(timeout);
+      res.end();
+      return;
+    }
+
+    const reader = body.getReader();
+    const decoder = new TextDecoder();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      // Write through immediately: buffering here would defeat the point of a
+      // token stream.
+      res.write(decoder.decode(value, { stream: true }));
+    }
+    res.write(decoder.decode());
+    res.end();
+  } catch (error) {
+    const aborted = (error as Error).name === 'AbortError';
+    if (!res.headersSent) {
+      res.status(aborted ? 504 : 502).json({
+        error: aborted ? 'upstream_timeout' : 'upstream_error',
+        error_description: aborted ? 'Simons took too long to respond.' : 'Could not reach Simons.',
+      });
+    } else {
+      res.end();
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+});
+
 // ── MCP ─────────────────────────────────────────────────────────
 
 app.post('/mcp', async (req, res) => {
