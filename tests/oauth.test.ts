@@ -6,6 +6,7 @@ import {
   isRedirectUriRegistered,
   createAuthCode,
   exchangeCode,
+  refreshAccessToken,
   resolveAccessToken,
   getProtectedResourceMetadata,
 } from '../src/oauth.js';
@@ -79,5 +80,67 @@ describe('stateless OAuth', () => {
     const meta = getProtectedResourceMetadata();
     expect(meta.resource).toMatch(/\/mcp$/);
     expect(meta.authorization_servers.length).toBe(1);
+  });
+});
+
+describe('refresh_token grant', () => {
+  function signedIn() {
+    const reg = registerClient({ redirect_uris: [REDIRECT] });
+    const clientId = reg.client_id as string;
+    const { verifier, challenge } = pkcePair();
+    const code = createAuthCode(clientId, 'cpz_key_abc', 'supersecret', REDIRECT, challenge, 'S256');
+    const token = exchangeCode(code, clientId, REDIRECT, verifier, undefined);
+    return { clientId, clientSecret: reg.client_secret as string, token: token! };
+  }
+
+  it('issues a refresh token alongside the access token', () => {
+    const { token } = signedIn();
+    expect(token.refresh_token).toMatch(/^cpzr_/);
+    expect(token.expires_in).toBe(12 * 60 * 60);
+  });
+
+  it('exchanges a refresh token for a working access token, as a public client', () => {
+    const { clientId, token } = signedIn();
+
+    const refreshed = refreshAccessToken(token.refresh_token, clientId, undefined);
+    expect(refreshed).not.toBeNull();
+
+    // The new access token must resolve to the same underlying credentials.
+    const creds = resolveAccessToken(refreshed!.access_token);
+    expect(creds).toEqual({ apiKey: 'cpz_key_abc', apiSecret: 'supersecret' });
+  });
+
+  it('rotates: each refresh returns a different refresh token', () => {
+    const { clientId, token } = signedIn();
+    const first = refreshAccessToken(token.refresh_token, clientId, undefined)!;
+    const second = refreshAccessToken(first.refresh_token, clientId, undefined)!;
+    expect(first.refresh_token).not.toBe(token.refresh_token);
+    expect(second.refresh_token).not.toBe(first.refresh_token);
+  });
+
+  it('accepts a correct client_secret and rejects a wrong one', () => {
+    const { clientId, clientSecret, token } = signedIn();
+    expect(refreshAccessToken(token.refresh_token, clientId, clientSecret)).not.toBeNull();
+    expect(refreshAccessToken(token.refresh_token, clientId, 'not-the-secret')).toBeNull();
+  });
+
+  it('refuses a refresh token presented by a different client', () => {
+    const { token } = signedIn();
+    const other = registerClient({ redirect_uris: [REDIRECT] });
+    expect(refreshAccessToken(token.refresh_token, other.client_id as string, undefined)).toBeNull();
+  });
+
+  it('rejects tampered, malformed and non-refresh tokens', () => {
+    const { clientId, token } = signedIn();
+    const tampered = token.refresh_token.slice(0, -4) + 'AAAA';
+    expect(refreshAccessToken(tampered, clientId, undefined)).toBeNull();
+    expect(refreshAccessToken('cpzr_garbage', clientId, undefined)).toBeNull();
+    // An access token is not a refresh token, even though both are sealed.
+    expect(refreshAccessToken(token.access_token, clientId, undefined)).toBeNull();
+  });
+
+  it('refuses an empty client_id', () => {
+    const { token } = signedIn();
+    expect(refreshAccessToken(token.refresh_token, '', undefined)).toBeNull();
   });
 });

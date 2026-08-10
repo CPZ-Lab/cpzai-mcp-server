@@ -9,6 +9,7 @@ import {
   registerClient,
   createAuthCode,
   exchangeCode,
+  refreshAccessToken,
   isRedirectUriRegistered,
 } from './oauth.js';
 import { renderConsentPage } from './consent-page.js';
@@ -188,6 +189,25 @@ app.post('/oauth/token', cors, (req, res) => {
       basicId = decoded.slice(0, idx);
       basicSecret = decoded.slice(idx + 1);
     }
+  }
+
+  if (grant_type === 'refresh_token') {
+    const presentedRefresh = req.body.refresh_token;
+    if (typeof presentedRefresh !== 'string' || !presentedRefresh) {
+      res.status(400).json({ error: 'invalid_request', error_description: 'refresh_token is required' });
+      return;
+    }
+    const refreshed = refreshAccessToken(
+      presentedRefresh,
+      client_id || basicId,
+      client_secret || basicSecret,
+    );
+    if (!refreshed) {
+      res.status(400).json({ error: 'invalid_grant' });
+      return;
+    }
+    res.json(refreshed);
+    return;
   }
 
   if (grant_type !== 'authorization_code') {

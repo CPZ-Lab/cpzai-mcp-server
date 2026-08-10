@@ -16,6 +16,21 @@ setInterval(() => usedCodes.clear(), 10 * 60 * 1000);
 const BASE_URL = process.env.MCP_BASE_URL || 'https://mcp.cpz-lab.com';
 const ACCESS_TOKEN_TTL_MS = 12 * 60 * 60 * 1000; // 12h — short-lived, re-issued on demand
 
+// Refresh tokens exist so long-lived clients (the CLI, IDE plugins) do not push
+// the user through a browser twice a day. 30 days matches what Claude Code and
+// Codex do, and is short enough that a leaked refresh token has a bounded life.
+//
+// HONEST LIMITATION: like access tokens and auth codes, refresh tokens here are
+// stateless and sealed rather than stored. That buys cross-task resolution with
+// no shared state, but it means there is no server-side revocation list, so a
+// rotated-away refresh token cannot be invalidated and replay of an old one
+// cannot be detected. Rotation below is therefore hygiene, not enforcement. The
+// real revocation path is the one users already have: Settings -> API Keys
+// revokes the underlying key pair, which instantly kills every token sealed
+// around it, refresh tokens included. If a proper revocation store is ever
+// added, the jti field below is the hook to key it on.
+const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30d
+
 // Access tokens are STATELESS and ENCRYPTED: the credentials are sealed inside
 // the token with AES-256-GCM under a server-side key, so (a) the raw key/secret
 // never appears in plaintext in the bearer (fixes the "token == plaintext
@@ -62,7 +77,7 @@ export function getOAuthMetadata() {
     token_endpoint: `${BASE_URL}/oauth/token`,
     registration_endpoint: `${BASE_URL}/oauth/register`,
     response_types_supported: ['code'],
-    grant_types_supported: ['authorization_code'],
+    grant_types_supported: ['authorization_code', 'refresh_token'],
     token_endpoint_auth_methods_supported: ['client_secret_post', 'client_secret_basic', 'none'],
     code_challenge_methods_supported: ['S256'],
     scopes_supported: ['read', 'write', 'trade'],
@@ -93,7 +108,7 @@ export function registerClient(body: Record<string, unknown>): Record<string, un
     client_secret_expires_at: 0,
     redirect_uris: redirectUris,
     token_endpoint_auth_method: (body.token_endpoint_auth_method as string) || 'client_secret_post',
-    grant_types: ['authorization_code'],
+    grant_types: ['authorization_code', 'refresh_token'],
     response_types: ['code'],
     client_name: body.client_name,
   };
@@ -210,7 +225,7 @@ export function exchangeCode(
   redirectUri: string,
   codeVerifier?: string,
   clientSecret?: string,
-): { access_token: string; token_type: string; expires_in: number } | null {
+): TokenResponse | null {
   const entry = unsealAuthCode(code);
   if (!entry) return null;
   if (usedCodes.has(code)) return null;
@@ -231,11 +246,113 @@ export function exchangeCode(
 
   usedCodes.add(code);
 
+  return issueTokens(entry.k, entry.s, clientId);
+}
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: 'Bearer';
+  expires_in: number;
+  refresh_token: string;
+  scope: string;
+}
+
+/** Mint a fresh access + refresh pair for a set of credentials. */
+function issueTokens(apiKey: string, apiSecret: string, clientId: string): TokenResponse {
   return {
-    access_token: sealToken(entry.k, entry.s),
+    access_token: sealToken(apiKey, apiSecret),
     token_type: 'Bearer',
     expires_in: Math.floor(ACCESS_TOKEN_TTL_MS / 1000),
+    refresh_token: sealRefreshToken(apiKey, apiSecret, clientId),
+    scope: 'read write trade',
   };
+}
+
+interface RefreshPayload {
+  k: string;
+  s: string;
+  /** The client this token was issued to. A token minted for one client is
+   *  useless to another, so a leaked refresh token cannot be replayed by a
+   *  differently-registered client. */
+  c: string;
+  /** Unique id per mint. Unused today; the hook for a future revocation store. */
+  jti: string;
+  exp: number;
+}
+
+function sealRefreshToken(apiKey: string, apiSecret: string, clientId: string): string {
+  const payload: RefreshPayload = {
+    k: apiKey,
+    s: apiSecret,
+    c: clientId,
+    jti: crypto.randomBytes(12).toString('base64url'),
+    exp: Date.now() + REFRESH_TOKEN_TTL_MS,
+  };
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', TOKEN_KEY, iv);
+  const ct = Buffer.concat([cipher.update(JSON.stringify(payload), 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `cpzr_${Buffer.concat([iv, tag, ct]).toString('base64url')}`;
+}
+
+function unsealRefreshToken(token: string): RefreshPayload | null {
+  if (!token?.startsWith('cpzr_')) return null;
+  try {
+    const raw = Buffer.from(token.slice(5), 'base64url');
+    const iv = raw.subarray(0, 12);
+    const tag = raw.subarray(12, 28);
+    const ct = raw.subarray(28);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', TOKEN_KEY, iv);
+    decipher.setAuthTag(tag);
+    const payload = JSON.parse(
+      Buffer.concat([decipher.update(ct), decipher.final()]).toString('utf8'),
+    ) as RefreshPayload;
+    if (typeof payload.exp !== 'number' || payload.exp < Date.now()) return null;
+    if (!payload.k || !payload.s || !payload.c) return null;
+    return payload;
+  } catch {
+    return null; // wrong key, tampered, or malformed
+  }
+}
+
+/**
+ * The refresh_token grant. Rotates: every successful refresh returns a NEW
+ * refresh token and the caller is expected to discard the old one.
+ *
+ * Client proof works the same way as the code exchange. A confidential client
+ * presents its secret; a public client (RFC 8252 native apps, which is what the
+ * CLI is) presents nothing beyond the client_id, exactly as the spec allows,
+ * because the refresh token itself is the secret in that flow. The binding to
+ * `c` is what stops that token being useful anywhere else.
+ *
+ * The refresh does NOT re-validate the underlying API key against the database.
+ * It does not need to: the sealed credentials are handed to `rest-api` on the
+ * next call, which validates the key, checks it is still approved, and runs the
+ * billing gate. A revoked key therefore stops working on the next request
+ * regardless of how fresh the bearer around it is.
+ */
+export function refreshAccessToken(
+  refreshToken: string,
+  clientId: string,
+  clientSecret?: string,
+): TokenResponse | null {
+  const payload = unsealRefreshToken(refreshToken);
+  if (!payload) return null;
+
+  // The presented client_id must match the one the token was sealed for.
+  if (!clientId || !ctEq(payload.c, clientId)) return null;
+
+  const client = getClient(clientId);
+  if (!client) return null;
+
+  // A confidential client that sends a secret must send the right one. Sending
+  // none is allowed (public client), but sending a wrong one is a hard fail
+  // rather than a silent downgrade to the public path.
+  if (clientSecret !== undefined && clientSecret !== '' && !ctEq(clientSecret, client.clientSecret)) {
+    return null;
+  }
+
+  return issueTokens(payload.k, payload.s, clientId);
 }
 
 /** Encrypt credentials into a self-contained bearer token (AES-256-GCM). */
