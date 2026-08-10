@@ -215,6 +215,10 @@ export function renderConsentPage(params: {
         <div class="scope-label">Trade</div>
         <div class="scope-detail">Place orders through your connected brokers, subject to your pre-trade guards</div>
       </div>
+      <div class="scope">
+        <div class="scope-label">Simons</div>
+        <div class="scope-detail">Ask Simons questions and let it work on your behalf using the access above</div>
+      </div>
     </div>
     <div class="note">
       Signing in issues a dedicated, revocable credential managed for you — no keys to copy.
