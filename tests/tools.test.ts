@@ -20,9 +20,42 @@ describe('registerTools', () => {
     server = new McpServer({ name: 'test', version: '0.0.1' });
   });
 
-  it('registers all 18 tools without error', () => {
+  it('registers every tool without error, and the count is asserted', () => {
     const req = makeMockRequest();
     expect(() => registerTools(server, req)).not.toThrow();
+
+    // The old version of this test only checked that registration did not
+    // throw, while its title claimed a number. That catches nothing: a tool
+    // could be dropped and the test would still pass. Assert the real count
+    // and the names, so adding or losing one is a deliberate edit here.
+    const registered = Object.keys(
+      (server as unknown as { _registeredTools: Record<string, unknown> })._registeredTools,
+    ).sort();
+
+    expect(registered).toEqual([
+      'compute_risk',
+      'create_connection',
+      'create_strategy',
+      'create_webhook',
+      'delete_webhook',
+      'execute_strategy',
+      'get_backtest_results',
+      'get_bars',
+      'get_market_data',
+      'get_profile',
+      'get_strategy',
+      'list_accounts',
+      'list_connections',
+      'list_orders',
+      'list_positions',
+      'list_risk_snapshots',
+      'list_strategies',
+      'list_webhooks',
+      'place_order',
+      'sync_portfolio',
+      'update_strategy',
+    ]);
+    expect(registered).toHaveLength(21);
   });
 
   it('extracts CPZ key/secret from X-CPZ-Key headers', () => {

@@ -224,6 +224,61 @@ export function registerTools(server: McpServer, req: Request) {
     return formatResult(result);
   });
 
+  // ── Data connections ────────────────────────────────────────
+  //
+  // These exist so an OAuth client can manage connections at all. The browser
+  // writes them through the `api-connections` edge function, which
+  // authenticates a Supabase user JWT; a CLI or agent holds an API key or one
+  // of our sealed bearer tokens and never a JWT, so without these tools its
+  // only path to /connections was a direct call that rest-api correctly
+  // refuses. Routing through here means the token is unsealed once, server
+  // side, and the credential itself is encrypted by the same helper the
+  // browser path uses.
+
+  server.registerTool('list_connections', {
+    title: 'List Data Connections',
+    description: 'List the user\'s configured data-provider connections. Credentials are never returned.',
+    inputSchema: z.object({
+      connection_type: z.string().optional().describe('Filter by provider, e.g. polygon, databento'),
+    }),
+    annotations: { readOnlyHint: true },
+  }, async (args) => {
+    const query: Record<string, string> = {};
+    if (args.connection_type) query.connection_type = args.connection_type;
+    const result = await callRestApi({ method: 'GET', path: '/connections', query, ...creds });
+    return formatResult(result);
+  });
+
+  server.registerTool('create_connection', {
+    title: 'Create Data Connection',
+    description:
+      'Store a data-provider API key. The credential is encrypted server-side and can never be read back. One connection per provider.',
+    inputSchema: z.object({
+      connection_type: z.string().describe('Provider id, e.g. polygon, databento, finnhub'),
+      connection_name: z.string().describe('Display name for the connection'),
+      api_key: z.string().optional().describe('The provider API key'),
+      secret_token: z.string().optional().describe('Secondary secret, for providers that need a pair'),
+      configuration: z.record(z.unknown()).optional().describe('Non-secret provider settings'),
+    }),
+    // Writes a credential, so it is explicitly not read-only and not
+    // idempotent: a second call for the same provider is a 409, not a no-op.
+    annotations: { readOnlyHint: false, idempotentHint: false },
+  }, async (args) => {
+    const result = await callRestApi({
+      method: 'POST',
+      path: '/connections',
+      body: {
+        connection_type: args.connection_type,
+        connection_name: args.connection_name,
+        api_key: args.api_key,
+        secret_token: args.secret_token,
+        configuration: args.configuration ?? {},
+      },
+      ...creds,
+    });
+    return formatResult(result);
+  });
+
   // ── Market Data ─────────────────────────────────────────────
 
   server.registerTool('get_market_data', {
