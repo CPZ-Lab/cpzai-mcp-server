@@ -274,9 +274,19 @@ app.post(['/simons/stream', '/simons/chat'], cors, async (req, res) => {
   // hung upstream would hold the connection until the platform kills it.
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 120_000);
-  // If the caller hangs up, stop pulling from upstream rather than streaming
-  // into a closed socket.
-  req.on('close', () => controller.abort());
+
+  // Hang-up detection listens on the RESPONSE, not the request.
+  //
+  // `req` is a readable stream that express.json() has already consumed by the
+  // time this handler runs, so it emits 'close' immediately — aborting the
+  // fetch before it is even issued. That surfaced as an instant 504
+  // "Simons took too long", which reads as an upstream problem and sent me
+  // looking at network egress for a bug that was three lines above.
+  //
+  // `res` emits 'close' only when the client actually goes away, which is the
+  // signal we want: stop pulling from upstream rather than streaming into a
+  // socket nobody is reading.
+  res.on('close', () => controller.abort());
 
   try {
     const response = await fetch(upstream, {
