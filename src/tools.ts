@@ -22,12 +22,16 @@ export function extractCredentials(req: Request): { apiKey: string; apiSecret: s
     // Preferred: opaque OAuth access token resolved to credentials server-side.
     const resolved = resolveAccessToken(token);
     if (resolved) return resolved;
-    // Backward-compat: a direct `cpz_key_*.secret` bearer.
-    if (token.includes('cpz_key_')) {
+    // Backward-compat: direct `cpz_key_*.secret` bearer is gated behind env flag
+    // to avoid accidental secret exposure in logs/proxies. Set ALLOW_LEGACY_BEARER=true to enable.
+    if (process.env.ALLOW_LEGACY_BEARER === 'true' && token.startsWith('cpz_key_')) {
       const dotIndex = token.indexOf('.');
       if (dotIndex > 0) {
+        console.warn('[tools] Legacy bearer cpz_key_.* used — migrate to X-CPZ-Key/Secret or OAuth');
         return { apiKey: token.slice(0, dotIndex), apiSecret: token.slice(dotIndex + 1) };
       }
+    } else if (token.includes('cpz_key_')) {
+      console.warn('[tools] Rejected legacy cpz_key_ bearer — enable ALLOW_LEGACY_BEARER=true if needed');
     }
   }
 
