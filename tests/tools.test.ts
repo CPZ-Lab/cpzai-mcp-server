@@ -39,13 +39,23 @@ describe('registerTools', () => {
       'create_webhook',
       'delete_webhook',
       'execute_strategy',
+      'get_backtest_result',
       'get_backtest_results',
       'get_bars',
+      'get_data_file',
       'get_market_data',
+      'get_order',
       'get_profile',
+      'get_risk_snapshot',
       'get_strategy',
       'list_accounts',
+      'list_cash_flows',
       'list_connections',
+      'list_data_files',
+      'list_deals',
+      'list_fund_periods',
+      'list_journal_entries',
+      'list_lifecycle_events',
       'list_orders',
       'list_positions',
       'list_risk_snapshots',
@@ -55,7 +65,7 @@ describe('registerTools', () => {
       'sync_portfolio',
       'update_strategy',
     ]);
-    expect(registered).toHaveLength(21);
+    expect(registered).toHaveLength(31);
   });
 
   it('extracts CPZ key/secret from X-CPZ-Key headers', () => {
@@ -146,11 +156,5 @@ describe('api-client', () => {
     expect(result.status).toBe(401);
 
     globalThis.fetch = originalFetch;
-  });
-});
-
-describe('health endpoint', () => {
-  it('index module exports without error', async () => {
-    expect(true).toBe(true);
   });
 });
