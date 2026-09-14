@@ -1,8 +1,8 @@
 import * as Sentry from '@sentry/node';
 import express from 'express';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { registerTools, extractCredentials } from './tools.js';
+import { extractCredentials } from './tools.js';
+import { createMcpServer } from './server.js';
 import {
   getOAuthMetadata,
   getProtectedResourceMetadata,
@@ -22,7 +22,7 @@ if (process.env.SENTRY_DSN) {
   Sentry.init({
     dsn: process.env.SENTRY_DSN,
     environment: process.env.NODE_ENV || 'production',
-    release: process.env.SENTRY_RELEASE || 'cpzai-mcp-server@1.0.0',
+    release: process.env.SENTRY_RELEASE || 'cpzai-mcp-server@1.2.0',
     tracesSampleRate: 0.2,
     profilesSampleRate: 0.1,
   });
@@ -35,7 +35,8 @@ app.use(express.urlencoded({ extended: true }));
 function cors(_req: express.Request, res: express.Response, next: express.NextFunction) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-CPZ-Key, X-CPZ-Secret, X-Request-Id, MCP-Protocol-Version, MCP-Session-Id');
+  res.setHeader('Access-Control-Expose-Headers', 'WWW-Authenticate, MCP-Session-Id, X-Request-Id');
   next();
 }
 
@@ -353,7 +354,9 @@ app.post(['/simons/stream', '/simons/chat'], cors, async (req, res) => {
 
 // ── MCP ─────────────────────────────────────────────────────────
 
-app.post('/mcp', async (req, res) => {
+app.options('/mcp', cors, (_req, res) => res.sendStatus(204));
+
+app.post('/mcp', cors, async (req, res, next) => {
   // Challenge unauthenticated requests at the HTTP layer (MCP auth spec).
   // Returning 200 with in-band tool errors — the old behavior — meant OAuth-
   // capable clients never learned they should authenticate, so the only way
@@ -375,26 +378,24 @@ app.post('/mcp', async (req, res) => {
     return;
   }
 
-  const server = new McpServer({
-    name: 'cpzai-mcp-server',
-    version: '1.0.0',
+  const server = createMcpServer(req);
+  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+  res.on('close', () => {
+    void server.close().catch(error => console.error('[mcp] failed to close request transport', { error }));
   });
-
-  registerTools(server, req);
-
-  const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: undefined,
-  });
-
-  await server.connect(transport);
-  await transport.handleRequest(req, res, req.body);
+  try {
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+  } catch (error) {
+    next(error);
+  }
 });
 
-app.get('/mcp', async (_req, res) => {
+app.get('/mcp', cors, async (_req, res) => {
   res.writeHead(405).end(JSON.stringify({ error: 'Method not allowed. Use POST for Streamable HTTP.' }));
 });
 
-app.delete('/mcp', async (_req, res) => {
+app.delete('/mcp', cors, async (_req, res) => {
   res.writeHead(405).end(JSON.stringify({ error: 'Method not allowed. Sessions are stateless.' }));
 });
 

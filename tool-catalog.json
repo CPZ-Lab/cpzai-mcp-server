@@ -1,0 +1,319 @@
+[
+  {
+    "name": "compute_risk",
+    "title": "Compute Risk",
+    "description": "Compute a fresh risk snapshot for the portfolio. Returns VaR, Sharpe, drawdown, exposures, and risk score.",
+    "annotations": {
+      "readOnlyHint": false
+    }
+  },
+  {
+    "name": "create_connection",
+    "title": "Create Data Connection",
+    "description": "Store a data-provider API key. The credential is encrypted server-side and can never be read back. One connection per provider.",
+    "annotations": {
+      "readOnlyHint": false,
+      "idempotentHint": false
+    }
+  },
+  {
+    "name": "create_strategy",
+    "title": "Create Strategy",
+    "description": "Create a new trading strategy.",
+    "annotations": {
+      "readOnlyHint": false
+    }
+  },
+  {
+    "name": "create_webhook",
+    "title": "Create Webhook",
+    "description": "Subscribe to platform events via webhook. Returns the signing secret (save it — shown once).",
+    "annotations": {
+      "readOnlyHint": false
+    }
+  },
+  {
+    "name": "delete_webhook",
+    "title": "Delete Webhook",
+    "description": "Remove a webhook subscription.",
+    "annotations": {
+      "destructiveHint": true
+    }
+  },
+  {
+    "name": "execute_strategy",
+    "title": "Execute Strategy",
+    "description": "Execute a strategy on the Python backend. Returns execution results.",
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false
+    }
+  },
+  {
+    "name": "get_backtest_result",
+    "title": "Get Backtest Result",
+    "description": "Inspect one saved backtest run, including its configuration, result, code, and verification fields when available. Does not run a new backtest. Requires the strategies scope.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_backtest_results",
+    "title": "Get Backtest Results",
+    "description": "List backtest run results, optionally filtered by strategy.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_bars",
+    "title": "Get Historical Bars",
+    "description": "Fetch historical OHLCV bars for one or more symbols. Supports intraday (1Min–4Hour) and daily/weekly/monthly timeframes over a date range — the historical data the real-time quote tool cannot provide.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_data_file",
+    "title": "Get Data File",
+    "description": "Get one uploaded dataset’s metadata, including column information and storage path. Does not download the file. Requires the data scope.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_market_data",
+    "title": "Get Market Data",
+    "description": "Fetch real-time market data (price, bid/ask, volume) for one or more symbols.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_order",
+    "title": "Get Order",
+    "description": "Read one stored order record, including its reconciled status and fill fields. This is platform state, not a fresh broker query. Requires the orders scope.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_profile",
+    "title": "Get Profile",
+    "description": "Get the current authenticated user profile.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_risk_snapshot",
+    "title": "Get Risk Snapshot",
+    "description": "Inspect one saved portfolio risk snapshot and its recorded exposures, risk contributions, and analytics when available. Does not compute fresh risk. Requires trading_credentials or orders scope.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_strategy",
+    "title": "Get Strategy",
+    "description": "Get a specific strategy by ID.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "list_accounts",
+    "title": "List Accounts",
+    "description": "List connected trading accounts (broker credentials). Sensitive fields excluded.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "list_cash_flows",
+    "title": "List OTC Cash Flows",
+    "description": "Inspect recorded OTC cash flows and settlement state. Date filters apply to payment_date. amount_minor is an exact integer string; preserve its precision. Requires trading_credentials or orders scope.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "list_connections",
+    "title": "List Data Connections",
+    "description": "List the user's configured data-provider connections. Credentials are never returned.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "list_data_files",
+    "title": "List Data Files",
+    "description": "Discover your uploaded datasets and their schema metadata, row counts, file types, and processing status. Returns metadata, not file contents. Requires the data scope.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "list_deals",
+    "title": "List OTC Deals",
+    "description": "List middle-office OTC deal records in your personal or entity book. LIVE status includes DRAFT and CONFIRMED deals. Requires trading_credentials or orders scope.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "list_fund_periods",
+    "title": "List OTC Fund Periods",
+    "description": "Inspect recorded fund accounting periods, NAV fields, subscriptions, redemptions, and P&L when available. Monetary minor-unit fields are exact integer strings; preserve their precision. Requires trading_credentials or orders scope.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "list_journal_entries",
+    "title": "List OTC Journal Entries",
+    "description": "Inspect middle-office ledger entry headers and audit hashes. Date filters apply to entry_date. Returns headers, not journal line items or a balance calculation. Requires trading_credentials or orders scope.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "list_lifecycle_events",
+    "title": "List OTC Lifecycle Events",
+    "description": "Inspect scheduled OTC lifecycle events, their required inputs, dates, and processing status. Date filters apply to event_date. Requires trading_credentials or orders scope.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "list_orders",
+    "title": "List Orders",
+    "description": "List trading orders. Filter by status, symbol, side, or strategy.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "list_positions",
+    "title": "List Positions",
+    "description": "List one page of portfolio positions. Continue with offset until a short page is returned before concluding a portfolio review.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "list_risk_snapshots",
+    "title": "List Risk Snapshots",
+    "description": "List historical risk snapshots.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "list_strategies",
+    "title": "List Strategies",
+    "description": "List all trading strategies. Supports filtering by status, type, and title search.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "list_webhooks",
+    "title": "List Webhooks",
+    "description": "List a page of configured webhook subscriptions. Signing secrets are excluded.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "place_order",
+    "title": "Place Order",
+    "description": "Place an order using a tradable account from list_accounts. Check its broker and environment; live accounts can trade real money. Stop orders and time-in-force support depend on the broker. After a timeout, inspect list_orders before retrying; submission may have succeeded.",
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false
+    }
+  },
+  {
+    "name": "sync_portfolio",
+    "title": "Sync Portfolio",
+    "description": "Trigger a portfolio sync across all connected broker accounts.",
+    "annotations": {
+      "readOnlyHint": false
+    }
+  },
+  {
+    "name": "update_strategy",
+    "title": "Update Strategy",
+    "description": "Update an existing strategy. Pass only the fields to change.",
+    "annotations": {
+      "readOnlyHint": false
+    }
+  }
+]

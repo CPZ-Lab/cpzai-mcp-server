@@ -2,13 +2,13 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "com.cpz-lab.mcp/cpzai",
   "title": "CPZAI",
-  "description": "Build, backtest, and deploy quantitative trading strategies from your AI agent.",
+  "description": "Manage strategies, inspect saved backtests, trade, and review portfolio and middle-office data.",
   "websiteUrl": "https://ai.cpz-lab.com",
   "repository": {
     "url": "https://github.com/CPZ-Lab/cpzai-mcp-server",
     "source": "github"
   },
-  "version": "1.1.0",
+  "version": "1.2.0",
   "remotes": [
     {
       "type": "streamable-http",
@@ -19,7 +19,11 @@
     "io.modelcontextprotocol.registry/publisher-provided": {
       "tool": "manual-publish",
       "version": "1.1.0",
-      "categories": ["finance", "trading", "quant"],
+      "categories": [
+        "finance",
+        "trading",
+        "quant"
+      ],
       "tags": [
         "trading",
         "quant",
