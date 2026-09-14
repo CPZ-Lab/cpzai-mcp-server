@@ -17,8 +17,8 @@ const BASE_URL = process.env.MCP_BASE_URL || 'https://mcp.cpz-lab.com';
 const ACCESS_TOKEN_TTL_MS = 12 * 60 * 60 * 1000; // 12h — short-lived, re-issued on demand
 
 // Refresh tokens exist so long-lived clients (the CLI, IDE plugins) do not push
-// the user through a browser twice a day. 30 days matches what Claude Code and
-// Codex do, and is short enough that a leaked refresh token has a bounded life.
+// the user through a browser twice a day. The 30-day expiry bounds the lifetime
+// of a leaked refresh token.
 //
 // HONEST LIMITATION: like access tokens and auth codes, refresh tokens here are
 // stateless and sealed rather than stored. That buys cross-task resolution with
@@ -55,7 +55,7 @@ function ctEq(a: string, b: string): boolean {
 }
 
 /**
- * RFC 9728 Protected Resource Metadata. MCP clients (Claude Code, claude.ai)
+ * RFC 9728 Protected Resource Metadata. MCP clients
  * discover the authorization server from this document after receiving a 401
  * challenge on /mcp — without it, the OAuth flow never starts.
  */
