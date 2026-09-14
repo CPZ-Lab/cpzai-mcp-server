@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { registerExpandedTools } from '../src/expanded-tools.js';
 
 const id = '5a5d40e6-53f9-4be6-9ebc-d0f83a7f1b71';
 const entityId = '96043206-24a4-4d63-9cd7-04c51ccf7d7c';
@@ -13,6 +12,12 @@ describe('expanded tools over MCP', () => {
   let fetchMock: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
+    // The REST client captures its base URL when imported. Keep this suite's
+    // mount-path contract independent of the host/CI environment.
+    vi.stubEnv('CPZ_API_BASE_URL', 'https://api.example.test/functions/v1/rest-api');
+    vi.stubEnv('CPZ_API_TIMEOUT_MS', '20000');
+    vi.resetModules();
+    const { registerExpandedTools } = await import('../src/expanded-tools.js');
     fetchMock = vi.fn(async () => new Response(JSON.stringify({ data: [] }), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
     server = new McpServer({ name: 'expanded-test', version: '1.0.0' });
@@ -27,6 +32,7 @@ describe('expanded tools over MCP', () => {
     await client.close();
     await server.close();
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
   it('advertises all ten additions as read-only, idempotent tools', async () => {
@@ -53,6 +59,7 @@ describe('expanded tools over MCP', () => {
     const result = await client.callTool({ name, arguments: { id } });
     expect(result.isError).not.toBe(true);
     const [rawUrl, init] = fetchMock.mock.calls[0];
+    expect(new URL(rawUrl).origin).toBe('https://api.example.test');
     expect(new URL(rawUrl).pathname).toBe(`/functions/v1/rest-api/v1${path}/${id}`);
     expect(init.method).toBe('GET');
     expect(init.headers).toMatchObject({ 'X-CPZ-Key': 'test-key', 'X-CPZ-Secret': 'test-secret' });
@@ -73,6 +80,7 @@ describe('expanded tools over MCP', () => {
     expect(result.isError).not.toBe(true);
     const [rawUrl, init] = fetchMock.mock.calls[0];
     const url = new URL(rawUrl);
+    expect(url.origin).toBe('https://api.example.test');
     expect(url.pathname).toBe(`/functions/v1/rest-api/v1${path}`);
     expect(Object.fromEntries(url.searchParams)).toEqual(Object.fromEntries(Object.entries(args).map(([key, value]) => [key, String(value)])));
     expect(init.method).toBe('GET');
