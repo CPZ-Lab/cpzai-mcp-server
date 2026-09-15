@@ -21,7 +21,7 @@
  * clients that have no such mechanism.
  */
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from "@modelcontextprotocol/server";
 import { formatResult, invalidArguments } from './tool-result.js';
 import {
   TOOL_CATEGORIES,
@@ -110,7 +110,7 @@ export function registerToolSearch(server: McpServer, tools: CapturedTool[]) {
       'Invoke a read-only CPZAI tool discovered with search_tools, passing its arguments exactly as its input_schema describes. Read-only tools only: tools that place orders, execute strategies, or write credentials and webhooks are advertised under their own names and must be called directly so you and the user see what is being approved. Returns the tool\'s own result unchanged.',
     inputSchema: z.object({
       name: z.string().trim().min(1).max(128).describe('Tool name exactly as returned by search_tools.'),
-      arguments: z.record(z.unknown()).optional().describe('Arguments object matching that tool\'s input_schema. Omit for a tool that takes none.'),
+      arguments: z.record(z.string(), z.unknown()).optional().describe('Arguments object matching that tool\'s input_schema. Omit for a tool that takes none.'),
     }),
     annotations: readOnlyAnnotations,
   }, async (args) => {

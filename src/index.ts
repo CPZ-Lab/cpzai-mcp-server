@@ -1,6 +1,6 @@
 import * as Sentry from '@sentry/node';
 import express from 'express';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { createMcpHandler } from '@modelcontextprotocol/server';
 import { extractCredentials } from './tools.js';
 import { createMcpServer } from './server.js';
 import { resolveScopes } from './scopes.js';
@@ -23,7 +23,7 @@ if (process.env.SENTRY_DSN) {
   Sentry.init({
     dsn: process.env.SENTRY_DSN,
     environment: process.env.NODE_ENV || 'production',
-    release: process.env.SENTRY_RELEASE || 'cpzai-mcp-server@1.3.0',
+    release: process.env.SENTRY_RELEASE || 'cpzai-mcp-server@1.4.0',
     tracesSampleRate: 0.2,
     profilesSampleRate: 0.1,
   });
@@ -36,7 +36,7 @@ app.use(express.urlencoded({ extended: true }));
 function cors(_req: express.Request, res: express.Response, next: express.NextFunction) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-CPZ-Key, X-CPZ-Secret, X-Request-Id, MCP-Protocol-Version, MCP-Session-Id');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-CPZ-Key, X-CPZ-Secret, X-Request-Id, MCP-Protocol-Version, MCP-Session-Id, Mcp-Method, Mcp-Name');
   res.setHeader('Access-Control-Expose-Headers', 'WWW-Authenticate, MCP-Session-Id, X-Request-Id');
   next();
 }
@@ -355,6 +355,47 @@ app.post(['/simons/stream', '/simons/chat'], cors, async (req, res) => {
 
 // ── MCP ─────────────────────────────────────────────────────────
 
+/**
+ * Rebuild the web-standard Request the MCP handler expects.
+ *
+ * The handler reads a web-standard Request, and express.json() has already
+ * consumed the raw Node stream by the time this runs, so converting the socket
+ * directly would hand it an empty body. Re-serializing the parsed body is the
+ * honest fix; content-length is dropped because it described the original bytes.
+ */
+function toWebRequest(req: express.Request): Request {
+  const host = req.get('host') ?? 'localhost';
+  const url = new URL(req.originalUrl, `${req.protocol}://${host}`);
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(req.headers)) {
+    if (name === 'content-length') continue;
+    if (Array.isArray(value)) for (const entry of value) headers.append(name, entry);
+    else if (typeof value === 'string') headers.set(name, value);
+  }
+  return new Request(url, { method: req.method, headers, body: JSON.stringify(req.body ?? {}) });
+}
+
+/** Stream a web Response back through Express, without buffering the stream. */
+async function pipeWebResponse(response: Response, res: express.Response): Promise<void> {
+  res.status(response.status);
+  response.headers.forEach((value, name) => res.setHeader(name, value));
+  if (!response.body) {
+    res.end();
+    return;
+  }
+  const reader = response.body.getReader();
+  // A client that hangs up mid-stream should stop the pump, not keep writing
+  // into a dead socket.
+  let closed = false;
+  res.on('close', () => { closed = true; void reader.cancel().catch(() => {}); });
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done || closed) break;
+    res.write(Buffer.from(value));
+  }
+  res.end();
+}
+
 /** True when this JSON-RPC body (single or batched) asks for the tool list. */
 function requestsToolList(body: unknown): boolean {
   const messages = Array.isArray(body) ? body : [body];
@@ -396,19 +437,27 @@ app.post(['/mcp', '/mcp/compact'], cors, async (req, res, next) => {
     ? await resolveScopes(creds.apiKey, creds.apiSecret, typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined)
     : null;
 
-  const server = createMcpServer(req, {
-    mode: req.path === '/mcp/compact' ? 'compact' : 'full',
-    scopes,
+  const mode = req.path === '/mcp/compact' ? 'compact' : 'full';
+
+  // `legacy: 'stateless'` is what lets one endpoint answer both eras: a
+  // 2026-07-28 client gets the modern path (server/discover, cacheable list
+  // results, no handshake), and an initialize-based client on 2025-11-25 or
+  // 2025-06-18 is served exactly as before.
+  const handler = createMcpHandler(() => createMcpServer(req, { mode, scopes }), {
+    legacy: 'stateless',
+    onerror: error => console.error('[mcp] handler error', {
+      message: error.message,
+      request_id: req.headers['x-request-id'],
+      path: req.path,
+    }),
   });
-  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-  res.on('close', () => {
-    void server.close().catch(error => console.error('[mcp] failed to close request transport', { error }));
-  });
+
   try {
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
+    await pipeWebResponse(await handler.fetch(toWebRequest(req)), res);
   } catch (error) {
     next(error);
+  } finally {
+    await handler.close?.();
   }
 });
 

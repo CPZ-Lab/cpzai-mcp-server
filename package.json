@@ -1,6 +1,6 @@
 {
   "name": "@cpzai/mcp-server",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "CPZAI MCP server — AI agent access to quantitative trading strategies, backtests, multi-broker order routing, portfolios, and risk analytics.",
   "license": "MIT",
   "homepage": "https://ai.cpz-lab.com",
@@ -33,13 +33,13 @@
     "export:catalog": "tsx scripts/export-tool-catalog.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/server": "^2.0.0",
     "@sentry/node": "^10.41.0",
     "express": "^4.21.2",
-    "zod": "^3.24.2",
-    "zod-to-json-schema": "^3.24.1"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "^2.0.0",
     "@types/express": "^5.0.1",
     "@types/node": "^22.13.10",
     "tsx": "^4.19.3",

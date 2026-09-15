@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import type { Request } from 'express';
 import { createMcpServer } from '../src/server.js';
 
@@ -28,7 +27,7 @@ describe('CPZAI MCP protocol', () => {
   });
 
   it('negotiates tools, resources, prompts and workflow instructions without an upstream request', async () => {
-    expect(client.getServerVersion()?.version).toBe('1.3.0');
+    expect(client.getServerVersion()?.version).toBe('1.4.0');
     expect(client.getInstructions()).toContain('unknown outcome');
     expect(client.getServerCapabilities()).toMatchObject({ tools: {}, resources: {}, prompts: {} });
     const { tools } = await client.listTools();

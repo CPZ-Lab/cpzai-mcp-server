@@ -3,9 +3,8 @@ import { writeFile, mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Request } from 'express';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
+import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
+import type { ToolAnnotations } from "@modelcontextprotocol/client";
 import { createMcpServer } from '../src/server.js';
 
 export interface ToolCatalogEntry {
