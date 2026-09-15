@@ -1,7 +1,14 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
-export const SERVER_INSTRUCTIONS = `CPZAI provides user-scoped trading and research tools. Use tools/list for the current catalog and read cpzai://guides/tool-usage and cpzai://guides/permissions before planning a workflow. Paginate list results; a page is not the entire portfolio. Read-only review does not require order submission or strategy execution. execute_strategy can place real orders. Inspect account environment and tradable status before any user-authorized trading. A failed or timed-out mutation can have an unknown outcome: reconcile orders before considering another submission. Never infer zero positions, prices, or risk from an error or missing data.`;
+const BASE_INSTRUCTIONS = `CPZAI provides user-scoped trading and research tools. Use tools/list for the current catalog and read cpzai://guides/tool-usage and cpzai://guides/permissions before planning a workflow. Paginate list results; a page is not the entire portfolio. Read-only review does not require order submission or strategy execution. execute_strategy can place real orders. Inspect account environment and tradable status before any user-authorized trading. A failed or timed-out mutation can have an unknown outcome: reconcile orders before considering another submission. Never infer zero positions, prices, or risk from an error or missing data.`;
+
+const COMPACT_INSTRUCTIONS = `This endpoint advertises a compact surface. tools/list carries every state-changing tool plus the everyday reads; the remaining read-only tools load on demand. Call search_tools to find them; it returns each match with its full input schema. Then invoke the match with call_tool. call_tool dispatches read-only tools only; anything that places orders, executes strategies, or writes credentials or webhooks is advertised under its own name and must be called directly. Read cpzai://guides/discovery for the categories and the search conventions. An empty search result means no tool matched that wording, never that the capability is absent.`;
+
+/** Server instructions, which differ by endpoint: see ToolMode in server.ts. */
+export function serverInstructions(mode: 'full' | 'compact' = 'full'): string {
+  return mode === 'compact' ? `${BASE_INSTRUCTIONS}\n\n${COMPACT_INSTRUCTIONS}` : BASE_INSTRUCTIONS;
+}
 
 const TOOL_USAGE = `# CPZAI tool usage
 
@@ -41,10 +48,37 @@ Legacy read/write/trade scopes are expanded by the REST API. A scope is a resour
 Middle-office reads default to personal scope. Supplying entity_id selects an organization only after active membership verification. Monetary amounts returned as strings must remain exact. A 401 requires valid authentication, 403 indicates insufficient permission, and provider or platform failures must remain visible.
 `;
 
+const DISCOVERY = `# CPZAI tool discovery
+
+Two endpoints serve the same tools with different discovery models.
+
+## https://mcp.cpz-lab.com/mcp (full catalogue)
+Every tool appears in tools/list. Use this endpoint when the client defers tool loading itself. With Claude's MCP connector, set \`defer_loading\` once on the toolset and pair it with the tool search tool:
+
+\`\`\`json
+{"type": "mcp_toolset", "mcp_server_name": "cpzai", "default_config": {"defer_loading": true},
+ "configs": {"list_accounts": {"defer_loading": false}, "list_positions": {"defer_loading": false}}}
+\`\`\`
+
+Deferred definitions are still sent on every request; they are kept out of the model's context until a search discovers them, and the prompt prefix is not disturbed, so the cache survives.
+
+## https://mcp.cpz-lab.com/mcp/compact (server-side progressive discovery)
+tools/list carries every state-changing tool, the read anchors (list_accounts, list_positions, list_orders, get_market_data), and two discovery tools. Use this endpoint when the client has no deferral mechanism of its own.
+
+- \`search_tools\` takes a natural-language query and/or a category and returns matching tools with their full input schemas. Categories: strategies, backtests, orders, positions, accounts, market-data, risk, data, webhooks, middle-office, profile. Search covers tool names, titles, descriptions, parameter names, and parameter descriptions, so searching for a field name such as \`entity_id\` or \`unsettled\` finds the tool that accepts it.
+- \`call_tool\` invokes a discovered tool by name with an arguments object matching its input_schema. It refuses anything that is not read-only, and refuses a read-only tool that is already advertised: call that one by name.
+
+Results from call_tool are the tool's own result, unchanged: same structuredContent, same isError semantics.
+
+## Conventions on both endpoints
+Tool names, arguments, results, pagination, and scopes are identical. Discovery never reads account data and never places an order. A tool present in tools/list is not proof the caller's key holds the scope for it; see cpzai://guides/permissions.
+`;
+
 export function registerCapabilities(server: McpServer) {
   for (const [name, uri, title, text] of [
     ['tool-usage', 'cpzai://guides/tool-usage', 'CPZAI Tool Usage', TOOL_USAGE],
     ['permissions', 'cpzai://guides/permissions', 'CPZAI Permissions', PERMISSIONS],
+    ['discovery', 'cpzai://guides/discovery', 'CPZAI Tool Discovery', DISCOVERY],
   ]) {
     server.registerResource(name, uri, { title, description: title, mimeType: 'text/markdown' }, async resourceUri => ({
       contents: [{ uri: resourceUri.href, mimeType: 'text/markdown', text }],
