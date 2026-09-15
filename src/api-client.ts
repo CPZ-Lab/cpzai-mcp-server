@@ -18,6 +18,12 @@ export interface ApiCallOptions {
   apiKey: string;
   apiSecret: string;
   requestId?: string;
+  /**
+   * Request budget for this call, overriding CPZ_API_TIMEOUT_MS. Discovery
+   * calls use a short one so a slow API degrades the tool list rather than
+   * making a client wait out the default budget.
+   */
+  timeoutMs?: number;
 }
 
 export interface ApiResult {
@@ -104,9 +110,18 @@ export async function callRestApi(opts: ApiCallOptions): Promise<ApiResult> {
   };
 
   const configuredTimeout = process.env.CPZ_API_TIMEOUT_MS;
-  const timeoutMs = configuredTimeout === undefined ? DEFAULT_TIMEOUT_MS : Number(configuredTimeout);
+  const timeoutMs = opts.timeoutMs !== undefined
+    ? opts.timeoutMs
+    : configuredTimeout === undefined ? DEFAULT_TIMEOUT_MS : Number(configuredTimeout);
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > MAX_TIMEOUT_MS) {
-    return failure(500, 'invalid_timeout_configuration', `CPZ_API_TIMEOUT_MS must be an integer between 1 and ${MAX_TIMEOUT_MS}.`, 0);
+    return failure(
+      500,
+      'invalid_timeout_configuration',
+      opts.timeoutMs !== undefined
+        ? `timeoutMs must be an integer between 1 and ${MAX_TIMEOUT_MS}.`
+        : `CPZ_API_TIMEOUT_MS must be an integer between 1 and ${MAX_TIMEOUT_MS}.`,
+      0,
+    );
   }
 
   let url: URL;

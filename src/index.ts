@@ -3,6 +3,7 @@ import express from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { extractCredentials } from './tools.js';
 import { createMcpServer } from './server.js';
+import { resolveScopes } from './scopes.js';
 import {
   getOAuthMetadata,
   getProtectedResourceMetadata,
@@ -22,7 +23,7 @@ if (process.env.SENTRY_DSN) {
   Sentry.init({
     dsn: process.env.SENTRY_DSN,
     environment: process.env.NODE_ENV || 'production',
-    release: process.env.SENTRY_RELEASE || 'cpzai-mcp-server@1.2.0',
+    release: process.env.SENTRY_RELEASE || 'cpzai-mcp-server@1.3.0',
     tracesSampleRate: 0.2,
     profilesSampleRate: 0.1,
   });
@@ -354,9 +355,19 @@ app.post(['/simons/stream', '/simons/chat'], cors, async (req, res) => {
 
 // ── MCP ─────────────────────────────────────────────────────────
 
-app.options('/mcp', cors, (_req, res) => res.sendStatus(204));
+/** True when this JSON-RPC body (single or batched) asks for the tool list. */
+function requestsToolList(body: unknown): boolean {
+  const messages = Array.isArray(body) ? body : [body];
+  return messages.some(message => (message as { method?: unknown } | null)?.method === 'tools/list');
+}
 
-app.post('/mcp', cors, async (req, res, next) => {
+app.options(['/mcp', '/mcp/compact'], cors, (_req, res) => res.sendStatus(204));
+
+// Two paths, one handler. /mcp/compact advertises a small surface and hands
+// the rest to search_tools/call_tool; /mcp advertises everything. The mode is
+// the URL rather than a header so that a client's cached tool list can never
+// belong to a different surface than the one it is calling.
+app.post(['/mcp', '/mcp/compact'], cors, async (req, res, next) => {
   // Challenge unauthenticated requests at the HTTP layer (MCP auth spec).
   // Returning 200 with in-band tool errors — the old behavior — meant OAuth-
   // capable clients never learned they should authenticate, so the only way
@@ -378,7 +389,17 @@ app.post('/mcp', cors, async (req, res, next) => {
     return;
   }
 
-  const server = createMcpServer(req);
+  // Scopes are looked up only for discovery. A tools/call already carries its
+  // own enforcement downstream, and adding a /me round trip to the order path
+  // would buy nothing but latency. The lookup is cached per credential.
+  const scopes = requestsToolList(req.body)
+    ? await resolveScopes(creds.apiKey, creds.apiSecret, typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined)
+    : null;
+
+  const server = createMcpServer(req, {
+    mode: req.path === '/mcp/compact' ? 'compact' : 'full',
+    scopes,
+  });
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   res.on('close', () => {
     void server.close().catch(error => console.error('[mcp] failed to close request transport', { error }));
@@ -391,11 +412,11 @@ app.post('/mcp', cors, async (req, res, next) => {
   }
 });
 
-app.get('/mcp', cors, async (_req, res) => {
+app.get(['/mcp', '/mcp/compact'], cors, async (_req, res) => {
   res.writeHead(405).end(JSON.stringify({ error: 'Method not allowed. Use POST for Streamable HTTP.' }));
 });
 
-app.delete('/mcp', cors, async (_req, res) => {
+app.delete(['/mcp', '/mcp/compact'], cors, async (_req, res) => {
   res.writeHead(405).end(JSON.stringify({ error: 'Method not allowed. Sessions are stateless.' }));
 });
 

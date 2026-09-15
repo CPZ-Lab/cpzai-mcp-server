@@ -28,14 +28,14 @@ describe('CPZAI MCP protocol', () => {
   });
 
   it('negotiates tools, resources, prompts and workflow instructions without an upstream request', async () => {
-    expect(client.getServerVersion()?.version).toBe('1.2.0');
+    expect(client.getServerVersion()?.version).toBe('1.3.0');
     expect(client.getInstructions()).toContain('unknown outcome');
     expect(client.getServerCapabilities()).toMatchObject({ tools: {}, resources: {}, prompts: {} });
     const { tools } = await client.listTools();
     expect(tools).toHaveLength(31);
     expect(new Set(tools.map(tool => tool.name)).size).toBe(31);
     expect((await client.listResources()).resources.map(resource => resource.uri)).toEqual([
-      'cpzai://guides/tool-usage', 'cpzai://guides/permissions',
+      'cpzai://guides/tool-usage', 'cpzai://guides/permissions', 'cpzai://guides/discovery',
     ]);
     expect((await client.listPrompts()).prompts.map(prompt => prompt.name)).toEqual(['review_portfolio', 'analyze_strategy']);
     expect(fetchMock).not.toHaveBeenCalled();

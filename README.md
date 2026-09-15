@@ -95,7 +95,7 @@ Tool annotations describe side effects. Actual authorization is enforced by the 
 
 ### Results and errors
 
-Tool responses preserve readable JSON text and include structured content. Check `isError` before using the result. Malformed upstream responses and provider failures stay errors. Request IDs support tracing without logging credentials.
+Tool responses preserve readable JSON text and include structured content. Most read tools declare an `outputSchema` so a client can validate what came back: list routes return `{data, count}`, single-record routes return `{data}`, and a delete returns `{message}`. The action tools that proxy to another service (`execute_strategy`, `sync_portfolio`, `compute_risk`, `get_market_data`, `get_bars`) and the two writes with their own handlers (`place_order`, `create_connection`) declare no output schema, because their shape is not this server's to promise. Output validation is skipped for error results. Check `isError` before using the result. Malformed upstream responses and provider failures stay errors. Request IDs support tracing without logging credentials.
 
 Eligible GET calls can retry transient upstream failures within a bounded timeout. Writes are not automatically retried. A timeout after order submission leaves the result unconfirmed; inspect existing orders and the broker before retrying. The public order route does not provide a general end-to-end idempotency guarantee.
 
@@ -105,22 +105,72 @@ Eligible GET calls can retry transient upstream failures within a bounded timeou
 |---|---|---|
 | Resource | `cpzai://guides/tool-usage` | Tool selection, pagination, and capability boundaries |
 | Resource | `cpzai://guides/permissions` | Resource permissions and execution boundaries |
+| Resource | `cpzai://guides/discovery` | Endpoints, deferred loading, and the search conventions |
 | Prompt | `review_portfolio` | Portfolio review workflow; optional `account_id` |
 | Prompt | `analyze_strategy` | Strategy investigation; required `strategy_id` |
 
 Requesting a prompt returns instructions; it does not execute a workflow. Discover these using standard MCP methods. There is no `/mcp/info` endpoint.
 
+## Progressive tool discovery
+
+The full catalogue is 31 tools and roughly 27 KB of JSON Schema, which every client pays for on every request unless it can defer tool loading. Tool-selection accuracy also falls off once a model is choosing between more than about thirty tools. There are two endpoints, serving identical tools under different discovery models.
+
+### `POST /mcp`: full catalogue
+
+`tools/list` returns every tool. Use this when the client defers loading itself: it needs the definitions in order to defer them. With Claude's MCP connector, pair `defer_loading` with the tool search tool and keep the everyday reads loaded:
+
+```json
+{
+  "type": "mcp_toolset",
+  "mcp_server_name": "cpzai",
+  "default_config": { "defer_loading": true },
+  "configs": {
+    "list_accounts":  { "defer_loading": false },
+    "list_positions": { "defer_loading": false },
+    "place_order":    { "defer_loading": false }
+  }
+}
+```
+
+Deferred definitions are still sent on every request; they stay out of the model's context until a search discovers them, and the prompt prefix is untouched, so the cache survives. Claude Code applies its own tool search to this endpoint with no configuration.
+
+### `POST /mcp/compact`: server-side discovery
+
+For clients with no deferral of their own. `tools/list` returns 15 tools instead of 31 (about 12 KB instead of 27 KB, a 55% cut):
+
+- `search_tools`: natural-language or keyword query, optional `category`, returns each match with its **full input schema**. Searches tool names, titles, descriptions, parameter names, and parameter descriptions, so a field name such as `unsettled` or `entity_id` finds the tool that accepts it. Categories: strategies, backtests, orders, positions, accounts, market-data, risk, data, webhooks, middle-office, profile.
+- `call_tool`: invokes a discovered tool by name with an arguments object matching its `input_schema`, and returns that tool's result unchanged.
+- Every state-changing tool (`place_order`, `execute_strategy`, `create_strategy`, `update_strategy`, `create_connection`, `create_webhook`, `delete_webhook`, `sync_portfolio`, `compute_risk`) plus the read anchors `list_accounts`, `list_positions`, `list_orders`, `get_market_data`.
+
+`call_tool` dispatches **read-only tools only**. A client gates approval on the tool name it can see, so routing an order through a generic dispatcher would hide it from the check meant to catch it. It also refuses a read-only tool that is already advertised, and answers an unknown name with near matches rather than a guess. Arguments are validated against the real tool schema before dispatch; a rejection returns the offending paths and that tool's schema.
+
+### Scope-aware discovery
+
+`tools/list` carries only the tools the calling credential's scopes permit. A `data` key sees 10 tools, not 31; an identity-only OAuth token sees `get_profile` alone; `search_tools` will not return an out-of-scope tool and `call_tool` will not dispatch one. Scopes come from `GET /me` on the REST API, cached per credential for 60 seconds and looked up only for `tools/list`, never on the call path.
+
+If the lookup fails, or the REST API deployment predates the `scopes` field, the full catalogue is advertised and the reason is logged: unknown is not the same as none. Filtering is discovery, not enforcement. The REST API remains the only thing that decides what a credential may touch, so a tool that is present can still return 403.
+
+Measured surfaces:
+
+| Endpoint | Full scopes | `data` scope only |
+|---|---|---|
+| `/mcp` | 31 tools, ~31 KB | 10 tools, ~9 KB |
+| `/mcp/compact` | 15 tools, ~13 KB | 6 tools, ~6 KB |
+
+Tool names, arguments, results and pagination are identical on both endpoints. Discovery reads no account data and places no order.
+
 ## Architecture
 
 ```text
 Remote MCP client
-  → POST /mcp (fresh stateless server per request)
+  → POST /mcp  (full catalogue) or POST /mcp/compact (search_tools + call_tool)
+  → fresh stateless server per request
   → user's API credentials, resolved from headers or encrypted OAuth token
   → CPZ REST API /functions/v1/rest-api/v1
   → existing user-scoped platform handlers
 ```
 
-`src/tools.ts` and `src/expanded-tools.ts` own the public MCP schemas; `src/capabilities.ts` defines guide resources and workflow prompts. They are distinct from internal Simons tools and are not imported from a shared schema package. The server proxies to the existing REST adapter rather than querying user data with a service-role key. The hosted service also supports authenticated Simons chat proxy routes; those routes are not additional MCP tools.
+`src/tools.ts` and `src/expanded-tools.ts` own the public MCP schemas; `src/capabilities.ts` defines guide resources and workflow prompts; `src/tool-registry.ts` captures those same schemas as data and `src/tool-search.ts` turns them into the compact surface, so the advertised and dispatchable catalogues cannot drift apart. They are distinct from internal Simons tools and are not imported from a shared schema package. The server proxies to the existing REST adapter rather than querying user data with a service-role key. The hosted service also supports authenticated Simons chat proxy routes; those routes are not additional MCP tools.
 
 ## Local development
 
