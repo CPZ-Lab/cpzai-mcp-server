@@ -9,17 +9,24 @@
  * registration functions against a recorder, so there is exactly one definition
  * of every tool and no second list to drift.
  */
-import { zodToJsonSchema } from 'zod-to-json-schema';
+import { z } from 'zod';
 import { OUTPUT_SCHEMAS } from './tool-output.js';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { CallToolResult, ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
-import type { ZodTypeAny, ZodObject, ZodRawShape } from 'zod';
+import type { McpServer, CallToolResult, ToolAnnotations } from "@modelcontextprotocol/server";
+import type { ZodType } from 'zod';
+
+// The target the v2 server itself converts with, so a schema handed out by
+// search_tools is byte-identical to the one tools/list publishes.
+const JSON_SCHEMA_TARGET = 'draft-2020-12' as const;
+
+function toJsonSchema(schema: ZodType, io: 'input' | 'output'): Record<string, unknown> {
+  return z.toJSONSchema(schema, { target: JSON_SCHEMA_TARGET, io }) as Record<string, unknown>;
+}
 
 export interface CapturedToolConfig {
   title?: string;
   description?: string;
-  inputSchema?: ZodTypeAny;
-  outputSchema?: ZodTypeAny;
+  inputSchema?: ZodType;
+  outputSchema?: ZodType;
   annotations?: ToolAnnotations;
 }
 
@@ -81,10 +88,7 @@ export function isReadOnly(tool: CapturedTool): boolean {
 export function inputJsonSchema(tool: CapturedTool): Record<string, unknown> {
   const schema = tool.config.inputSchema;
   if (!schema) return { type: 'object', additionalProperties: false };
-  return zodToJsonSchema(schema as ZodObject<ZodRawShape>, {
-    strictUnions: true,
-    pipeStrategy: 'input',
-  }) as Record<string, unknown>;
+  return toJsonSchema(schema, 'input');
 }
 
 /** Coarse grouping, used for filtering searches and for listing what exists. */
@@ -232,10 +236,7 @@ export function describeTool(tool: CapturedTool): ToolDescriptor {
     // have given it, output shape included.
     ...(OUTPUT_SCHEMAS[tool.name]
       ? {
-        output_schema: zodToJsonSchema(OUTPUT_SCHEMAS[tool.name] as ZodObject<ZodRawShape>, {
-          strictUnions: true,
-          pipeStrategy: 'output',
-        }) as Record<string, unknown>,
+        output_schema: toJsonSchema(OUTPUT_SCHEMAS[tool.name], 'output'),
       }
       : {}),
   };

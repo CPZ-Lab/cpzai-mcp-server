@@ -144,6 +144,17 @@ For clients with no deferral of their own. `tools/list` returns 15 tools instead
 
 `call_tool` dispatches **read-only tools only**. A client gates approval on the tool name it can see, so routing an order through a generic dispatcher would hide it from the check meant to catch it. It also refuses a read-only tool that is already advertised, and answers an unknown name with near matches rather than a guess. Arguments are validated against the real tool schema before dispatch; a rejection returns the offending paths and that tool's schema.
 
+### Protocol revisions
+
+Both endpoints serve the **2026-07-28** revision and every legacy revision back to 2024-10-07 from the same URL.
+
+- A 2026-07-28 client sends each request on its own, with no `initialize` handshake, names the method in the `Mcp-Method` header (and the tool in `Mcp-Name`) so a gateway can route without parsing the body, and carries its protocol version, client info and capabilities in `_meta`.
+- `server/discover` returns capabilities, instructions and supported versions in one call.
+- `tools/list`, `prompts/list`, `resources/list` and `server/discover` carry `ttlMs` and `cacheScope`. `tools/list` is always `private`: it is filtered per credential, so a shared cache would hand one key's catalogue to another.
+- An `initialize`-based client negotiates 2025-11-25, 2025-06-18 or older exactly as before. Claude Code and the existing connectors are unaffected.
+
+The server is stateless in both eras: no sessions, no `Mcp-Session-Id`, one fresh server per request.
+
 ### Scope-aware discovery
 
 `tools/list` carries only the tools the calling credential's scopes permit. A `data` key sees 10 tools, not 31; an identity-only OAuth token sees `get_profile` alone; `search_tools` will not return an out-of-scope tool and `call_tool` will not dispatch one. Scopes come from `GET /me` on the REST API, cached per credential for 60 seconds and looked up only for `tools/list`, never on the call path.
@@ -164,6 +175,7 @@ Tool names, arguments, results and pagination are identical on both endpoints. D
 ```text
 Remote MCP client
   → POST /mcp  (full catalogue) or POST /mcp/compact (search_tools + call_tool)
+  → createMcpHandler, legacy: 'stateless' (2026-07-28 and every legacy revision)
   → fresh stateless server per request
   → user's API credentials, resolved from headers or encrypted OAuth token
   → CPZ REST API /functions/v1/rest-api/v1

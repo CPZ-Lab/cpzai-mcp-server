@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from "@modelcontextprotocol/server";
 import type { Request } from 'express';
 import { callRestApi } from './api-client.js';
 import { resolveAccessToken } from './oauth.js';
@@ -295,7 +295,7 @@ export function registerTools(server: McpServer, req: Request) {
       connection_name: z.string().describe('Display name for the connection'),
       api_key: z.string().optional().describe('The provider API key'),
       secret_token: z.string().optional().describe('Secondary secret, for providers that need a pair'),
-      configuration: z.record(z.unknown()).optional().describe('Non-secret provider settings'),
+      configuration: z.record(z.string(), z.unknown()).optional().describe('Non-secret provider settings'),
     }),
     // Writes a credential, so it is explicitly not read-only and not
     // idempotent: a second call for the same provider is a 409, not a no-op.

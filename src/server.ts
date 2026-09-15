@@ -1,4 +1,12 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer } from "@modelcontextprotocol/server";
+import { SUPPORTED_PROTOCOL_VERSIONS } from '@modelcontextprotocol/server';
+
+/**
+ * The 2026-07-28 revision. The SDK's SUPPORTED_PROTOCOL_VERSIONS still lists
+ * only the legacy set, and a server opts into the modern era by naming it:
+ * that is what registers server/discover and the stateless request path.
+ */
+const MODERN_PROTOCOL_VERSION = '2026-07-28';
 import type { Request } from 'express';
 import { registerTools } from './tools.js';
 import { registerCapabilities, serverInstructions } from './capabilities.js';
@@ -29,8 +37,22 @@ export interface ServerOptions {
 export function createMcpServer(req: Request, options: ToolMode | ServerOptions = {}) {
   const { mode = 'full', scopes = null } = typeof options === 'string' ? { mode: options } as ServerOptions : options;
 
-  const server = new McpServer({ name: 'cpzai-mcp-server', version: '1.3.0' }, {
+  const server = new McpServer({ name: 'cpzai-mcp-server', version: '1.4.0' }, {
     instructions: serverInstructions(mode),
+    // Serve the 2026-07-28 revision alongside every legacy one the SDK still
+    // supports. A 2026-07-28 client gets the stateless path and server/discover;
+    // Claude Code (2025-06-18) and existing connectors negotiate as before.
+    supportedProtocolVersions: [MODERN_PROTOCOL_VERSION, ...SUPPORTED_PROTOCOL_VERSIONS],
+    // Cacheable list results. PRIVATE, never public: tools/list is filtered by
+    // the calling credential's scopes, so a shared cache would hand one key's
+    // catalogue to another. Sixty seconds matches the scope cache's own TTL,
+    // so a re-minted key cannot be stale for longer than the scopes behind it.
+    cacheHints: {
+      'tools/list': { ttlMs: 60_000, cacheScope: 'private' },
+      'prompts/list': { ttlMs: 300_000, cacheScope: 'public' },
+      'resources/list': { ttlMs: 300_000, cacheScope: 'public' },
+      'server/discover': { ttlMs: 60_000, cacheScope: 'private' },
+    },
   });
 
   // One definition of every tool. Capture first, then decide what reaches

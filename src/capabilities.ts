@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from 'zod';
 
 const BASE_INSTRUCTIONS = `CPZAI provides user-scoped trading and research tools. Use tools/list for the current catalog and read cpzai://guides/tool-usage and cpzai://guides/permissions before planning a workflow. Paginate list results; a page is not the entire portfolio. Read-only review does not require order submission or strategy execution. execute_strategy can place real orders. Inspect account environment and tradable status before any user-authorized trading. A failed or timed-out mutation can have an unknown outcome: reconcile orders before considering another submission. Never infer zero positions, prices, or risk from an error or missing data.`;
@@ -70,6 +70,9 @@ tools/list carries every state-changing tool, the read anchors (list_accounts, l
 
 Results from call_tool are the tool's own result, unchanged: same structuredContent, same isError semantics.
 
+## Protocol revisions
+Both endpoints serve the 2026-07-28 revision and every legacy revision back to 2024-10-07 from the same URL. A 2026-07-28 client sends each request on its own with no initialize handshake, names the method in the Mcp-Method header (and the tool in Mcp-Name), carries its protocol version and identity in _meta, and may call server/discover for capabilities and instructions. tools/list, prompts/list, resources/list and server/discover carry ttlMs and cacheScope; tools/list is always cacheScope private because it is filtered per credential. An initialize-based client negotiates 2025-11-25 or older exactly as before.
+
 ## Scope filtering applies to both endpoints
 tools/list carries only the tools the calling credential's scopes permit, when those scopes can be determined: a data-scoped key is not shown the order surface, and search_tools does not return it either. If the scope lookup is unavailable the full catalogue is advertised, because unknown is not the same as none. Filtering is discovery, not enforcement; the REST API decides what a credential may touch.
 
@@ -91,7 +94,7 @@ export function registerCapabilities(server: McpServer) {
   server.registerPrompt('review_portfolio', {
     title: 'Review Portfolio',
     description: 'Read-only portfolio review using accounts, paginated positions, orders, and stored risk snapshots.',
-    argsSchema: { account_id: z.string().trim().min(1).optional().describe('Optional account filter') },
+    argsSchema: z.object({ account_id: z.string().trim().min(1).optional().describe('Optional account filter') }),
   }, ({ account_id }) => ({
     messages: [{ role: 'user' as const, content: { type: 'text' as const, text:
       `Review my portfolio${account_id ? ` for account ${JSON.stringify(account_id)}` : ''}. Read cpzai://guides/tool-usage. List accounts, retrieve all pages of positions and relevant stored risk snapshots, and examine orders as permitted. Report account environments, timestamps, exposure, and missing or failed inputs. Keep currency amounts exact. This request is read-only; do not compute new snapshots, sync accounts, execute strategies, or submit orders.` } }],
@@ -100,7 +103,7 @@ export function registerCapabilities(server: McpServer) {
   server.registerPrompt('analyze_strategy', {
     title: 'Analyze Strategy',
     description: 'Inspect stored strategy code and backtest evidence without execution or edits.',
-    argsSchema: { strategy_id: z.string().uuid().describe('Strategy UUID') },
+    argsSchema: z.object({ strategy_id: z.string().uuid().describe('Strategy UUID') }),
   }, ({ strategy_id }) => ({
     messages: [{ role: 'user' as const, content: { type: 'text' as const, text:
       `Analyze strategy ${strategy_id}. Read its code with get_strategy, page through get_backtest_results for this strategy, and inspect relevant get_backtest_result records. If data inputs need investigation, use list_data_files/get_data_file and list_connections. Evaluate the actual stored evidence, call out missing data and failed requests, and propose improvements. This request authorizes analysis only; do not update or execute the strategy, create connections, or place trades.` } }],
