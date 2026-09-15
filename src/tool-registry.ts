@@ -10,6 +10,7 @@
  * of every tool and no second list to drift.
  */
 import { zodToJsonSchema } from 'zod-to-json-schema';
+import { OUTPUT_SCHEMAS } from './tool-output.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult, ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type { ZodTypeAny, ZodObject, ZodRawShape } from 'zod';
@@ -54,11 +55,17 @@ export function captureTools(register: (server: McpServer) => void): CapturedToo
   return captured;
 }
 
+/** The tool's config with its declared output envelope attached, if it has one. */
+export function withOutputSchema(tool: CapturedTool): CapturedToolConfig {
+  const outputSchema = OUTPUT_SCHEMAS[tool.name];
+  return outputSchema ? { ...tool.config, outputSchema } : tool.config;
+}
+
 /** Replay captured tools onto a real server, in capture order. */
 export function advertise(server: McpServer, tools: CapturedTool[]) {
   for (const tool of tools) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (server as any).registerTool(tool.name, tool.config, tool.handler);
+    (server as any).registerTool(tool.name, withOutputSchema(tool), tool.handler);
   }
 }
 
@@ -208,6 +215,7 @@ export interface ToolDescriptor {
   read_only: boolean;
   callable_via: 'call_tool' | 'direct';
   input_schema: Record<string, unknown>;
+  output_schema?: Record<string, unknown>;
 }
 
 export function describeTool(tool: CapturedTool): ToolDescriptor {
@@ -220,5 +228,15 @@ export function describeTool(tool: CapturedTool): ToolDescriptor {
     read_only: readOnly,
     callable_via: readOnly ? 'call_tool' : 'direct',
     input_schema: inputJsonSchema(tool),
+    // A discovered tool should arrive with the same contract tools/list would
+    // have given it, output shape included.
+    ...(OUTPUT_SCHEMAS[tool.name]
+      ? {
+        output_schema: zodToJsonSchema(OUTPUT_SCHEMAS[tool.name] as ZodObject<ZodRawShape>, {
+          strictUnions: true,
+          pipeStrategy: 'output',
+        }) as Record<string, unknown>,
+      }
+      : {}),
   };
 }

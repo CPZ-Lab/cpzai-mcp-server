@@ -75,7 +75,16 @@ describe('progressive tool discovery', () => {
     for (const deferred of ['list_cash_flows', 'get_bars', 'list_strategies', 'get_profile']) {
       expect(names).not.toContain(deferred);
     }
-    expect(JSON.stringify(tools).length).toBeLessThan(13_000);
+    // Compact carries well under half the bytes of the full catalogue.
+    const full = createMcpServer({ headers: HEADERS } as unknown as Request, 'full');
+    const fullClient = new Client({ name: 'budget', version: '1.0.0' });
+    const [c, s] = InMemoryTransport.createLinkedPair();
+    await full.connect(s);
+    await fullClient.connect(c);
+    const fullBytes = JSON.stringify((await fullClient.listTools()).tools).length;
+    await fullClient.close();
+    await full.close();
+    expect(JSON.stringify(tools).length).toBeLessThan(fullBytes * 0.5);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

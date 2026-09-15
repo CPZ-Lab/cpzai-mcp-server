@@ -12,7 +12,7 @@ export function serverInstructions(mode: 'full' | 'compact' = 'full'): string {
 
 const TOOL_USAGE = `# CPZAI tool usage
 
-Discover the server's registered schemas with tools/list. Successful results include structuredContent and an equivalent JSON text block. Tool failures set isError; inspect error, code, and request_id when present.
+Discover the server's registered schemas with tools/list. Successful results include structuredContent and an equivalent JSON text block. Most read tools also declare an outputSchema: list routes return {data, count}, single-record routes return {data}, and a delete returns {message}. Action tools that proxy to another service declare no output schema because their shape is not this server's to promise. Tool failures set isError; inspect error, code, and request_id when present.
 
 ## Pagination and data provenance
 Most list tools accept limit (1–100, default 50) and offset (default 0). Advance offset by the number of returned records and continue until a page shorter than the requested limit. A count is the current page size, not the total. Lists are live views: concurrent writes can change pages. list_accounts defaults to 100; the other list tools default to 50. Use an explicit limit for consistent paging. get_bars uses a separate limit of 1–10000 bars per symbol. Preserve provider timestamps and currency units; middle-office minor-unit amounts are strings to preserve integer precision. Never replace missing or failed data with zeros.
@@ -31,7 +31,7 @@ No generic HTTP/SQL tool, order cancellation, sandbox dry_run, apply_patch, SDK 
 
 const PERMISSIONS = `# CPZAI credentials and permissions
 
-Connect to https://mcp.cpz-lab.com/mcp over stateless Streamable HTTP using OAuth or X-CPZ-Key and X-CPZ-Secret. The REST API validates credentials and enforces user ownership, scopes, and applicable subscription checks on each data operation. Tool discovery describes the full server surface; it is not proof that a particular key can call every tool.
+Connect to https://mcp.cpz-lab.com/mcp over stateless Streamable HTTP using OAuth or X-CPZ-Key and X-CPZ-Secret. The REST API validates credentials and enforces user ownership, scopes, and applicable subscription checks on each data operation. tools/list is filtered to the scopes your credential holds when they can be determined, so a tool that is absent is one this key cannot call. When the scope lookup is unavailable the full catalogue is advertised, which is not a grant: enforcement is always the REST API, and a tool that is present can still return 403.
 
 | Tools | Accepted resource scopes (any listed) |
 | --- | --- |
@@ -70,8 +70,11 @@ tools/list carries every state-changing tool, the read anchors (list_accounts, l
 
 Results from call_tool are the tool's own result, unchanged: same structuredContent, same isError semantics.
 
+## Scope filtering applies to both endpoints
+tools/list carries only the tools the calling credential's scopes permit, when those scopes can be determined: a data-scoped key is not shown the order surface, and search_tools does not return it either. If the scope lookup is unavailable the full catalogue is advertised, because unknown is not the same as none. Filtering is discovery, not enforcement; the REST API decides what a credential may touch.
+
 ## Conventions on both endpoints
-Tool names, arguments, results, pagination, and scopes are identical. Discovery never reads account data and never places an order. A tool present in tools/list is not proof the caller's key holds the scope for it; see cpzai://guides/permissions.
+Tool names, arguments, results, and pagination are identical. Discovery never reads account data and never places an order. See cpzai://guides/permissions for the scope vocabulary.
 `;
 
 export function registerCapabilities(server: McpServer) {

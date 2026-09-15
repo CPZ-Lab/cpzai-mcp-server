@@ -3,6 +3,7 @@ import express from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { extractCredentials } from './tools.js';
 import { createMcpServer } from './server.js';
+import { resolveScopes } from './scopes.js';
 import {
   getOAuthMetadata,
   getProtectedResourceMetadata,
@@ -354,6 +355,12 @@ app.post(['/simons/stream', '/simons/chat'], cors, async (req, res) => {
 
 // ── MCP ─────────────────────────────────────────────────────────
 
+/** True when this JSON-RPC body (single or batched) asks for the tool list. */
+function requestsToolList(body: unknown): boolean {
+  const messages = Array.isArray(body) ? body : [body];
+  return messages.some(message => (message as { method?: unknown } | null)?.method === 'tools/list');
+}
+
 app.options(['/mcp', '/mcp/compact'], cors, (_req, res) => res.sendStatus(204));
 
 // Two paths, one handler. /mcp/compact advertises a small surface and hands
@@ -382,7 +389,17 @@ app.post(['/mcp', '/mcp/compact'], cors, async (req, res, next) => {
     return;
   }
 
-  const server = createMcpServer(req, req.path === '/mcp/compact' ? 'compact' : 'full');
+  // Scopes are looked up only for discovery. A tools/call already carries its
+  // own enforcement downstream, and adding a /me round trip to the order path
+  // would buy nothing but latency. The lookup is cached per credential.
+  const scopes = requestsToolList(req.body)
+    ? await resolveScopes(creds.apiKey, creds.apiSecret, typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined)
+    : null;
+
+  const server = createMcpServer(req, {
+    mode: req.path === '/mcp/compact' ? 'compact' : 'full',
+    scopes,
+  });
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   res.on('close', () => {
     void server.close().catch(error => console.error('[mcp] failed to close request transport', { error }));

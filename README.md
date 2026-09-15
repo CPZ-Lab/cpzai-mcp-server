@@ -95,7 +95,7 @@ Tool annotations describe side effects. Actual authorization is enforced by the 
 
 ### Results and errors
 
-Tool responses preserve readable JSON text and include structured content. Check `isError` before using the result. Malformed upstream responses and provider failures stay errors. Request IDs support tracing without logging credentials.
+Tool responses preserve readable JSON text and include structured content. Most read tools declare an `outputSchema` so a client can validate what came back: list routes return `{data, count}`, single-record routes return `{data}`, and a delete returns `{message}`. The action tools that proxy to another service (`execute_strategy`, `sync_portfolio`, `compute_risk`, `get_market_data`, `get_bars`) and the two writes with their own handlers (`place_order`, `create_connection`) declare no output schema, because their shape is not this server's to promise. Output validation is skipped for error results. Check `isError` before using the result. Malformed upstream responses and provider failures stay errors. Request IDs support tracing without logging credentials.
 
 Eligible GET calls can retry transient upstream failures within a bounded timeout. Writes are not automatically retried. A timeout after order submission leaves the result unconfirmed; inspect existing orders and the broker before retrying. The public order route does not provide a general end-to-end idempotency guarantee.
 
@@ -144,7 +144,20 @@ For clients with no deferral of their own. `tools/list` returns 15 tools instead
 
 `call_tool` dispatches **read-only tools only**. A client gates approval on the tool name it can see, so routing an order through a generic dispatcher would hide it from the check meant to catch it. It also refuses a read-only tool that is already advertised, and answers an unknown name with near matches rather than a guess. Arguments are validated against the real tool schema before dispatch; a rejection returns the offending paths and that tool's schema.
 
-Tool names, arguments, results, pagination, and scopes are identical on both endpoints. Discovery reads no account data and places no order. Presence in `tools/list` is not proof that the caller's key holds the scope for a tool; see `cpzai://guides/permissions`.
+### Scope-aware discovery
+
+`tools/list` carries only the tools the calling credential's scopes permit. A `data` key sees 10 tools, not 31; an identity-only OAuth token sees `get_profile` alone; `search_tools` will not return an out-of-scope tool and `call_tool` will not dispatch one. Scopes come from `GET /me` on the REST API, cached per credential for 60 seconds and looked up only for `tools/list`, never on the call path.
+
+If the lookup fails, or the REST API deployment predates the `scopes` field, the full catalogue is advertised and the reason is logged: unknown is not the same as none. Filtering is discovery, not enforcement. The REST API remains the only thing that decides what a credential may touch, so a tool that is present can still return 403.
+
+Measured surfaces:
+
+| Endpoint | Full scopes | `data` scope only |
+|---|---|---|
+| `/mcp` | 31 tools, ~31 KB | 10 tools, ~9 KB |
+| `/mcp/compact` | 15 tools, ~13 KB | 6 tools, ~6 KB |
+
+Tool names, arguments, results and pagination are identical on both endpoints. Discovery reads no account data and places no order.
 
 ## Architecture
 
