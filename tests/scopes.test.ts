@@ -57,8 +57,8 @@ describe('scope-aware discovery', () => {
   });
 
   it('advertises the full catalogue when scopes are unknown, which is not the same as none', async () => {
-    expect(await toolNames({ scopes: null })).toHaveLength(31);
-    expect(await toolNames({})).toHaveLength(31);
+    expect(await toolNames({ scopes: null })).toHaveLength(33);
+    expect(await toolNames({})).toHaveLength(33);
     // An identity-only credential holds no resource scope and gets only the
     // tools that need none.
     expect(await toolNames({ scopes: new Set<string>() })).toEqual(['get_profile']);

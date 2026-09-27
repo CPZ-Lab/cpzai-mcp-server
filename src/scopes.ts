@@ -25,6 +25,9 @@ export const TOOL_SCOPES: Record<string, string[]> = {
   get_strategy: ['strategies'],
   create_strategy: ['strategies'],
   update_strategy: ['strategies'],
+  // Served by the cpz gateway, which gates overlay/exposure on strategies too.
+  get_overlay_exposure: ['strategies'],
+  list_overlays: ['strategies'],
   get_backtest_results: ['strategies'],
   get_backtest_result: ['strategies'],
   list_orders: ['orders'],

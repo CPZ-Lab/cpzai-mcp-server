@@ -5,6 +5,11 @@ import { setTimeout as delay } from 'node:timers/promises';
 // The API is mounted under the Supabase edge-function route, not /v1 alone.
 const DEFAULT_API_BASE = 'https://api.cpz-lab.com/functions/v1/rest-api';
 const REST_API_BASE = `${(process.env.CPZ_API_BASE_URL || DEFAULT_API_BASE).replace(/\/$/, '')}/v1`;
+// The cpz gateway serves the routes the REST adapter has no resource for
+// (overlay exposure). It authenticates the same X-CPZ-Key/X-CPZ-Secret pair and
+// enforces the same scopes, so it is the same user-scoped trust boundary.
+const DEFAULT_GATEWAY_BASE = 'https://api-ai.cpz-lab.com/cpz';
+const GATEWAY_BASE = (process.env.CPZ_GATEWAY_BASE_URL || DEFAULT_GATEWAY_BASE).replace(/\/$/, '');
 const DEFAULT_TIMEOUT_MS = 20_000;
 const MAX_TIMEOUT_MS = 120_000;
 const MAX_GET_ATTEMPTS = 3;
@@ -24,6 +29,12 @@ export interface ApiCallOptions {
    * making a client wait out the default budget.
    */
   timeoutMs?: number;
+  /**
+   * Which platform surface serves `path`: the REST adapter (default) or the
+   * cpz gateway. Both take the caller's own credential; neither is a
+   * service-role path from here.
+   */
+  api?: 'rest' | 'gateway';
 }
 
 export interface ApiResult {
@@ -126,7 +137,7 @@ export async function callRestApi(opts: ApiCallOptions): Promise<ApiResult> {
 
   let url: URL;
   try {
-    url = new URL(`${REST_API_BASE}${opts.path}`);
+    url = new URL(`${opts.api === 'gateway' ? GATEWAY_BASE : REST_API_BASE}${opts.path}`);
     if (opts.query) {
       for (const [key, value] of Object.entries(opts.query)) url.searchParams.set(key, value);
     }

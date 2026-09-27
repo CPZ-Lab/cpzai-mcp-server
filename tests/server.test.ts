@@ -31,8 +31,8 @@ describe('CPZAI MCP protocol', () => {
     expect(client.getInstructions()).toContain('unknown outcome');
     expect(client.getServerCapabilities()).toMatchObject({ tools: {}, resources: {}, prompts: {} });
     const { tools } = await client.listTools();
-    expect(tools).toHaveLength(31);
-    expect(new Set(tools.map(tool => tool.name)).size).toBe(31);
+    expect(tools).toHaveLength(33);
+    expect(new Set(tools.map(tool => tool.name)).size).toBe(33);
     expect((await client.listResources()).resources.map(resource => resource.uri)).toEqual([
       'cpzai://guides/tool-usage', 'cpzai://guides/permissions', 'cpzai://guides/discovery',
     ]);

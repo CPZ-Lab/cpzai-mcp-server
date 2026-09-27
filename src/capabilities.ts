@@ -20,13 +20,16 @@ Most list tools accept limit (1–100, default 50) and offset (default 0). Advan
 ## Research and inspection
 Use list_data_files and get_data_file to discover stored metadata, columns, and existing previews. These tools do not download raw files or guarantee a five-row sample. Use get_strategy for stored code, get_backtest_results followed by get_backtest_result for stored runs, and get_order/get_risk_snapshot for individual records. Stored backtests are not a new backtest run.
 
+## Overlays
+An overlay is a strategy that hedges other strategies or whole broker accounts under a hedge policy. list_overlays lists them with their targets, policy objective, hedge ratio, tolerance band and benchmark, and current hedge status; get_overlay_exposure resolves one overlay's full exposure, hedge drift, advisory suggested order, effectiveness and P&L. When complete is false a price or price history is missing: the hedge ratio and suggested order are withheld as null. Never size or place a hedge from an incomplete result, and never read a null ratio as zero. A suggested order is advice, not an order; placing it is a separate, user-authorized place_order call. Overlay configuration is not writable through this server; it is set in CPZAI Strategy Lab.
+
 ## Trading and recovery
 Start with list_accounts; select a tradable account and confirm its environment matches the user's intent. place_order requires a positive quantity, price for limit/stop_limit, and stop_price for stop/stop_limit. Broker stop-order support varies. Only day duration is exposed because it is supported consistently across routes. execute_strategy executes code and can trade; it is not a read-only signal or dry-run tool. A user-authorized workflow should not automatically place another order after execution.
 
 The adapter never retries POST, PATCH, PUT, or DELETE. An unconfirmed mutation may have reached the platform or broker. Inspect orders and broker state before any resubmission; an empty local order page is not proof that a broker order failed. There is no end-to-end idempotent order retry guarantee on this interface.
 
 ## Capability boundaries
-No generic HTTP/SQL tool, order cancellation, sandbox dry_run, apply_patch, SDK lookup, or execution-log tool is exposed. Use only tools returned by tools/list. Resources and prompts provide guidance; they do not execute trades or grant additional permissions.
+No generic HTTP/SQL tool, order cancellation, overlay configuration write, sandbox dry_run, apply_patch, SDK lookup, or execution-log tool is exposed. Use only tools returned by tools/list. Resources and prompts provide guidance; they do not execute trades or grant additional permissions.
 `;
 
 const PERMISSIONS = `# CPZAI credentials and permissions
@@ -35,7 +38,7 @@ Connect to https://mcp.cpz-lab.com/mcp over stateless Streamable HTTP using OAut
 
 | Tools | Accepted resource scopes (any listed) |
 | --- | --- |
-| Strategy management and backtest reads | strategies |
+| Strategy management, backtest and overlay reads | strategies |
 | Data files, connections, quotes, historical bars | data |
 | Account listing | trading_credentials |
 | Orders and strategy execution | orders |

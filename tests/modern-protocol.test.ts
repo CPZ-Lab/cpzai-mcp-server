@@ -54,7 +54,7 @@ describe('the 2026-07-28 revision', () => {
     const { result, error } = await send('tools/list');
     expect(error).toBeUndefined();
     expect(result.resultType).toBe('complete');
-    expect(result.tools).toHaveLength(31);
+    expect(result.tools).toHaveLength(33);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

@@ -49,6 +49,9 @@ export const OUTPUT_SCHEMAS: Record<string, z.ZodTypeAny> = {
   list_cash_flows: listEnvelope,
   list_journal_entries: listEnvelope,
   list_fund_periods: listEnvelope,
+  // Built by this server from the strategies scan plus one exposure read per
+  // overlay, so the envelope is this server's to promise.
+  list_overlays: listEnvelope,
 
   get_strategy: recordEnvelope,
   get_data_file: recordEnvelope,
@@ -56,6 +59,9 @@ export const OUTPUT_SCHEMAS: Record<string, z.ZodTypeAny> = {
   get_order: recordEnvelope,
   get_risk_snapshot: recordEnvelope,
   get_profile: recordEnvelope,
+  // The gateway's exposure document, wrapped by this server as {data} with the
+  // completeness verdict alongside it.
+  get_overlay_exposure: recordEnvelope,
   create_strategy: recordEnvelope,
   update_strategy: recordEnvelope,
   create_webhook: recordEnvelope,

@@ -46,7 +46,7 @@ describe('progressive tool discovery', () => {
     const pair = await connect('full');
     open.push(pair);
     const names = (await pair.client.listTools()).tools.map(tool => tool.name);
-    expect(names).toHaveLength(31);
+    expect(names).toHaveLength(33);
     expect(names).not.toContain('search_tools');
     expect(names).not.toContain('call_tool');
     expect(fetchMock).not.toHaveBeenCalled();

@@ -116,6 +116,17 @@
     }
   },
   {
+    "name": "get_overlay_exposure",
+    "title": "Get Overlay Exposure",
+    "description": "Resolve one overlay strategy's hedge: what its targets (strategies or broker accounts) carry, what the overlay itself holds, the combined book, and how far the hedge is from policy (objective, target ratio, tolerance band, current ratio, drift, advisory suggested order), plus hedge effectiveness and base/overlay/combined P&L. When complete is false a price or price history is missing: the hedge ratio and suggested order are withheld (null), never estimated, and no hedge should be sized from the result. Read-only; places no order. Requires the strategies scope.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
     "name": "get_profile",
     "title": "Get Profile",
     "description": "Get the current authenticated user profile.",
@@ -240,6 +251,17 @@
     "name": "list_orders",
     "title": "List Orders",
     "description": "List trading orders. Filter by status, symbol, side, or strategy.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "list_overlays",
+    "title": "List Overlays",
+    "description": "List your overlay strategies (strategies whose role is overlay) with their hedge configuration: targets (strategies or broker accounts, with weights), policy (objective, hedge ratio, tolerance band, benchmark), and current hedge status. The configuration comes from each overlay's exposure read, so a page of overlays costs one read per overlay and needs the platform market-data source; hedge_instruments, rebalance_trigger and notes are not exposed by any API route yet. total is the exact number of overlays. Requires the strategies scope.",
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false,

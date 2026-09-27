@@ -5,6 +5,7 @@ import { callRestApi } from './api-client.js';
 import { resolveAccessToken } from './oauth.js';
 import { formatResult, invalidArguments } from './tool-result.js';
 import { registerExpandedTools } from './expanded-tools.js';
+import { registerOverlayTools } from './overlay-tools.js';
 
 const pageLimit = z.number().int().min(1).max(100).optional().describe('Page size (default 50, maximum 100)');
 const pageOffset = z.number().int().min(0).optional().describe('Rows to skip; increase by returned count for the next page');
@@ -126,6 +127,11 @@ export function registerTools(server: McpServer, req: Request) {
     const result = await callRestApi({ method: 'PATCH', path: `/strategies/${id}`, body, ...creds });
     return formatResult(result);
   });
+
+  // Overlays are strategies that hedge other strategies or accounts. Read-only
+  // here: the platform has no API-credential route that writes their policy
+  // and targets (see src/overlay-tools.ts).
+  registerOverlayTools(server, creds);
 
   // ── Backtests ───────────────────────────────────────────────
 
