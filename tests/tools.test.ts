@@ -34,6 +34,7 @@ describe('registerTools', () => {
 
     expect(registered).toEqual([
       'compute_risk',
+      'configure_overlay',
       'create_connection',
       'create_strategy',
       'create_webhook',
@@ -45,6 +46,7 @@ describe('registerTools', () => {
       'get_data_file',
       'get_market_data',
       'get_order',
+      'get_overlay_exposure',
       'get_profile',
       'get_risk_snapshot',
       'get_strategy',
@@ -57,6 +59,7 @@ describe('registerTools', () => {
       'list_journal_entries',
       'list_lifecycle_events',
       'list_orders',
+      'list_overlays',
       'list_positions',
       'list_risk_snapshots',
       'list_strategies',
@@ -65,7 +68,7 @@ describe('registerTools', () => {
       'sync_portfolio',
       'update_strategy',
     ]);
-    expect(registered).toHaveLength(31);
+    expect(registered).toHaveLength(34);
   });
 
   it('extracts CPZ key/secret from X-CPZ-Key headers', () => {

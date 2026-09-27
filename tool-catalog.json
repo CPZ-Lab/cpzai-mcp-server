@@ -8,6 +8,16 @@
     }
   },
   {
+    "name": "configure_overlay",
+    "title": "Configure Overlay",
+    "description": "Make a strategy an overlay, or change or remove its overlay configuration, in one atomic write. role overlay needs a policy and at least one target, and REPLACES the whole policy and target list: policy fields you omit take their defaults (hedge_ratio 1, tolerance_band 0.1, rebalance_trigger band, no hedge instruments, no notes) and targets you do not list are removed, so read list_overlays first when changing one field. role alpha removes the policy and targets and makes it an ordinary strategy again. Becoming an overlay turns short selling on for the strategy. Places no order, but changes what the overlay hedges from its next run. Requires the strategies scope.",
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": true
+    }
+  },
+  {
     "name": "create_connection",
     "title": "Create Data Connection",
     "description": "Store a data-provider API key. The credential is encrypted server-side and can never be read back. One connection per provider.",
@@ -108,6 +118,17 @@
     "name": "get_order",
     "title": "Get Order",
     "description": "Read one stored order record, including its reconciled status and fill fields. This is platform state, not a fresh broker query. Requires the orders scope.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "get_overlay_exposure",
+    "title": "Get Overlay Exposure",
+    "description": "Resolve one overlay strategy's hedge: what its targets (strategies or broker accounts) carry, what the overlay itself holds, the combined book, and how far the hedge is from policy (objective, target ratio, tolerance band, current ratio, drift, advisory suggested order), plus hedge effectiveness and base/overlay/combined P&L. When complete is false a price or price history is missing: the hedge ratio and suggested order are withheld (null), never estimated, and no hedge should be sized from the result. Read-only; places no order. Requires the strategies scope.",
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false,
@@ -240,6 +261,17 @@
     "name": "list_orders",
     "title": "List Orders",
     "description": "List trading orders. Filter by status, symbol, side, or strategy.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "list_overlays",
+    "title": "List Overlays",
+    "description": "List your overlay strategies with their full configuration: policy (objective, hedge ratio, tolerance band, hedge instruments, benchmark, rebalance trigger, notes) and targets (strategies or broker accounts, with weights). configured is true when an overlay has a policy and at least one target. One read, no market data; for hedge status and drift use get_overlay_exposure. The platform returns at most 200 overlays, ordered by title; truncated says whether more exist. Requires the strategies scope.",
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false,

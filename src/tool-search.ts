@@ -1,7 +1,7 @@
 /**
  * Progressive tool discovery.
  *
- * The full catalogue is ~31 tools and ~27 KB of JSON Schema. Every client that
+ * The full catalogue is ~34 tools and ~40 KB of JSON Schema. Every client that
  * cannot defer tool loading pays that on every request, and tool-selection
  * accuracy degrades once a model is choosing between more than about thirty
  * tools. Compact mode advertises a small surface (the two tools below, the

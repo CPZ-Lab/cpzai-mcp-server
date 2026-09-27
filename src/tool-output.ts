@@ -9,8 +9,9 @@
  *
  * Only shapes this server can actually guarantee are declared. The action
  * endpoints (execute_strategy, sync_portfolio, compute_risk, get_market_data,
- * get_bars) and the two writes that proxy to their own handlers (place_order,
- * create_connection) return whatever the downstream edge function returns, so
+ * get_bars) and the writes that proxy to their own handlers (place_order,
+ * create_connection, configure_overlay) return whatever the downstream edge
+ * function returns, so
  * they declare nothing rather than promise a shape we do not control.
  *
  * The SDK skips output validation when a result carries isError, so the error
@@ -49,6 +50,9 @@ export const OUTPUT_SCHEMAS: Record<string, z.ZodTypeAny> = {
   list_cash_flows: listEnvelope,
   list_journal_entries: listEnvelope,
   list_fund_periods: listEnvelope,
+  // Built by this server around the gateway's overlay list, so the envelope
+  // is this server's to promise.
+  list_overlays: listEnvelope,
 
   get_strategy: recordEnvelope,
   get_data_file: recordEnvelope,
@@ -56,6 +60,9 @@ export const OUTPUT_SCHEMAS: Record<string, z.ZodTypeAny> = {
   get_order: recordEnvelope,
   get_risk_snapshot: recordEnvelope,
   get_profile: recordEnvelope,
+  // The gateway's exposure document, wrapped by this server as {data} with the
+  // completeness verdict alongside it.
+  get_overlay_exposure: recordEnvelope,
   create_strategy: recordEnvelope,
   update_strategy: recordEnvelope,
   create_webhook: recordEnvelope,

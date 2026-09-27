@@ -77,6 +77,27 @@ describe('REST client request contract', () => {
     expect(timeoutSpy.mock.calls[0][0]).toBeGreaterThan(119000);
     expect(timeoutSpy.mock.calls[0][0]).toBeLessThanOrEqual(120000);
   });
+
+  it('sends gateway calls to the cpz gateway with the same credential, and leaves REST calls on the adapter', async () => {
+    vi.stubEnv('CPZ_API_BASE_URL', undefined);
+    vi.stubEnv('CPZ_GATEWAY_BASE_URL', undefined);
+    vi.resetModules();
+    const { callRestApi: fresh } = await import('../src/api-client.js');
+    const fetchMock = vi.fn().mockImplementation(async () => json({ data: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fresh({ ...options, api: 'gateway', path: '/overlay/exposure', query: { strategy_id: 'abc' } });
+    await fresh(options);
+
+    const [gatewayUrl, gatewayInit] = fetchMock.mock.calls[0];
+    expect(String(gatewayUrl)).toBe('https://api-ai.cpz-lab.com/cpz/overlay/exposure?strategy_id=abc');
+    expect(gatewayInit.headers).toMatchObject({
+      'X-CPZ-Key': options.apiKey,
+      'X-CPZ-Secret': options.apiSecret,
+      'x-request-id': options.requestId,
+    });
+    expect(String(fetchMock.mock.calls[1][0])).toBe('https://api.cpz-lab.com/functions/v1/rest-api/v1/strategies');
+  });
 });
 
 describe('honest failures', () => {
