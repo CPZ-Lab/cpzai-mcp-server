@@ -6,7 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 const DEFAULT_API_BASE = 'https://api.cpz-lab.com/functions/v1/rest-api';
 const REST_API_BASE = `${(process.env.CPZ_API_BASE_URL || DEFAULT_API_BASE).replace(/\/$/, '')}/v1`;
 // The cpz gateway serves the routes the REST adapter has no resource for
-// (overlay exposure). It authenticates the same X-CPZ-Key/X-CPZ-Secret pair and
+// (overlay configuration and exposure). It authenticates the same X-CPZ-Key/X-CPZ-Secret pair and
 // enforces the same scopes, so it is the same user-scoped trust boundary.
 const DEFAULT_GATEWAY_BASE = 'https://api-ai.cpz-lab.com/cpz';
 const GATEWAY_BASE = (process.env.CPZ_GATEWAY_BASE_URL || DEFAULT_GATEWAY_BASE).replace(/\/$/, '');

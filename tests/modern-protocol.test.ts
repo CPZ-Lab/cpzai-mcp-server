@@ -54,7 +54,7 @@ describe('the 2026-07-28 revision', () => {
     const { result, error } = await send('tools/list');
     expect(error).toBeUndefined();
     expect(result.resultType).toBe('complete');
-    expect(result.tools).toHaveLength(33);
+    expect(result.tools).toHaveLength(34);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -79,7 +79,7 @@ describe('the 2026-07-28 revision', () => {
     expect(result.instructions).toContain('call_tool dispatches read-only tools only');
     const list = await send('tools/list', {}, { mode: 'compact' });
     expect(list.result.tools.map((tool: { name: string }) => tool.name)).toContain('search_tools');
-    expect(list.result.tools).toHaveLength(15);
+    expect(list.result.tools).toHaveLength(16);
   });
 
   it('applies scope filtering on the modern path too', async () => {

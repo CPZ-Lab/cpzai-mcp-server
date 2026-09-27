@@ -4,7 +4,7 @@ A Model Context Protocol adapter for [CPZAI](https://ai.cpz-lab.com): strategies
 
 **Hosted endpoint:** `https://mcp.cpz-lab.com/mcp`
 **Transport:** stateless Streamable HTTP
-**Current source:** version 1.4.0: 33 tools, three guide resources, two workflow prompts.
+**Current source:** version 1.4.0: 34 tools, three guide resources, two workflow prompts.
 
 This README describes the updated source, not a completed production deployment. Use your connected client's `tools/list`, `resources/list`, and `prompts/list` to verify deployed capabilities. The previous source registered 21 tools; old references to 18 tools or a proposed 29-tool release were inaccurate.
 
@@ -41,8 +41,9 @@ OAuth access tokens are opaque and accepted by this server. Do not pass them dir
 | Strategies | `get_strategy` | Read one strategy |
 | Strategies | `create_strategy` | Create a strategy |
 | Strategies | `update_strategy` | Update selected strategy fields |
-| Overlays | `list_overlays` | Overlay strategies with their targets, hedge policy and hedge status |
+| Overlays | `list_overlays` | Overlay strategies with their full hedge policy and targets |
 | Overlays | `get_overlay_exposure` | One overlay's exposure, hedge drift, suggested order, effectiveness and P&L |
+| Overlays | `configure_overlay` | Set or remove an overlay's role, policy and targets atomically |
 | Backtests | `get_backtest_results` | List saved backtest runs |
 | Backtests | `get_backtest_result` | Read one saved backtest run |
 | Orders | `list_orders` | status, symbol, side, strategy_id |
@@ -97,15 +98,23 @@ Tool annotations describe side effects. Actual authorization is enforced by the 
 
 ### Overlays
 
-An overlay is a strategy that hedges other strategies or whole broker accounts under a hedge policy. `get_overlay_exposure` reads the platform's resolved exposure for one overlay from the cpz gateway (`GET /cpz/overlay/exposure`, strategies scope). Its result leads with the verdict: `complete`, `hedge_ratio_status` (`measured`, `not_measured` for objectives with no ratio or nothing to hedge, or `withheld`) and `hedge_ratio_reason`, then the platform document under `data`. When `complete` is false a price or price history is missing, and the hedge ratio, drift, band flag and suggested order are `null` with a `withheld` block naming the missing symbols. Never size or place a hedge from an incomplete result. The suggested order is advice; placing it is a separate, user-authorized `place_order` call.
+An overlay is a strategy that hedges other strategies or whole broker accounts under a hedge policy. All three overlay tools call the cpz gateway with your own credential and need the `strategies` scope.
 
-`list_overlays` finds overlays by scanning your strategies for `strategy_role: overlay`, then reads each overlay's targets and policy from its exposure. A page therefore costs one exposure read per overlay (default 10, maximum 25) and needs the platform market-data source; `total` is the exact number of overlays. An overlay whose configuration could not be read makes the page an error with every entry still attached, because an unread configuration is unknown, not empty. `hedge_instruments`, `rebalance_trigger` and `notes` are not exposed by any API route yet.
+`list_overlays` (`GET /cpz/overlays`) returns every overlay with its full policy (objective, hedge ratio, tolerance band, hedge instruments, benchmark, rebalance trigger, notes) and targets, in one read with no market data. `configured` is true when an overlay has a policy and at least one target. The platform returns at most 200 overlays, ordered by title; `truncated: true` says more exist, and the result then carries a note that it is not the complete list.
 
-There is no overlay configuration tool. The platform writes overlay role, policy and targets only through `save_overlay_config`, which runs as the signed-in user and cannot be called with an API credential. Configure overlays in CPZAI Strategy Lab.
+`get_overlay_exposure` (`GET /cpz/overlay/exposure`) resolves one overlay's hedge. Its result leads with the verdict: `complete`, `hedge_ratio_status` (`measured`, `not_measured` for objectives with no ratio or nothing to hedge, or `withheld`) and `hedge_ratio_reason`, then the platform document under `data`. When `complete` is false a price or price history is missing, and the hedge ratio, drift, band flag and suggested order are `null` with a `withheld` block naming the missing symbols. Never size or place a hedge from an incomplete result. The suggested order is advice; placing it is a separate, user-authorized `place_order` call. A 409 means the strategy is not an overlay or has no policy or targets yet, and points at `configure_overlay`.
+
+`configure_overlay` (`PUT /cpz/overlays/{id}`) saves role, policy and targets in one transaction and returns the saved configuration.
+
+- `role: "overlay"` needs a policy and at least one target, and **replaces** both. Policy fields you omit take their defaults (`hedge_ratio` 1, `tolerance_band` 0.1, `rebalance_trigger` band, no instruments, no notes), and targets you do not list are removed. Read `list_overlays` first and send the whole configuration.
+- `role: "alpha"` removes the policy and targets. Pass neither with it.
+- Becoming an overlay turns short selling on for the strategy.
+- The tool refuses before any request: an unknown objective, `hedge_ratio` outside 0 to 5, `tolerance_band` outside (0, 1], a beta overlay without `benchmark_symbol`, no targets, a self-target, the same target twice, a weight outside (0, 10], an account environment other than paper or live, and misspelt fields. Ownership, account membership and cycles are checked by the platform, whose 400 message is passed through verbatim.
+- A 200 whose read-back failed is reported as saved, with a note to confirm it with `list_overlays`. A 5xx, a timeout or an unreadable 200 is never reported as a save: the outcome is unknown, so check `list_overlays` before saving again. The write is never retried.
 
 ### Results and errors
 
-Tool responses preserve readable JSON text and include structured content. Most read tools declare an `outputSchema` so a client can validate what came back: list routes return `{data, count}`, single-record routes return `{data}`, and a delete returns `{message}`. The action tools that proxy to another service (`execute_strategy`, `sync_portfolio`, `compute_risk`, `get_market_data`, `get_bars`) and the two writes with their own handlers (`place_order`, `create_connection`) declare no output schema, because their shape is not this server's to promise. Output validation is skipped for error results. Check `isError` before using the result. Malformed upstream responses and provider failures stay errors. Request IDs support tracing without logging credentials.
+Tool responses preserve readable JSON text and include structured content. Most read tools declare an `outputSchema` so a client can validate what came back: list routes return `{data, count}`, single-record routes return `{data}`, and a delete returns `{message}`. The action tools that proxy to another service (`execute_strategy`, `sync_portfolio`, `compute_risk`, `get_market_data`, `get_bars`) and the writes with their own handlers (`place_order`, `create_connection`, `configure_overlay`) declare no output schema, because their shape is not this server's to promise. Output validation is skipped for error results. Check `isError` before using the result. Malformed upstream responses and provider failures stay errors. Request IDs support tracing without logging credentials.
 
 Eligible GET calls can retry transient upstream failures within a bounded timeout. Writes are not automatically retried. A timeout after order submission leaves the result unconfirmed; inspect existing orders and the broker before retrying. The public order route does not provide a general end-to-end idempotency guarantee.
 
@@ -123,7 +132,7 @@ Requesting a prompt returns instructions; it does not execute a workflow. Discov
 
 ## Progressive tool discovery
 
-The full catalogue is 33 tools and roughly 37 KB of JSON Schema, which every client pays for on every request unless it can defer tool loading. Tool-selection accuracy also falls off once a model is choosing between more than about thirty tools. There are two endpoints, serving identical tools under different discovery models.
+The full catalogue is 34 tools and roughly 40 KB of JSON Schema, which every client pays for on every request unless it can defer tool loading. Tool-selection accuracy also falls off once a model is choosing between more than about thirty tools. There are two endpoints, serving identical tools under different discovery models.
 
 ### `POST /mcp`: full catalogue
 
@@ -146,11 +155,11 @@ Deferred definitions are still sent on every request; they stay out of the model
 
 ### `POST /mcp/compact`: server-side discovery
 
-For clients with no deferral of their own. `tools/list` returns 15 tools instead of 33 (about 14 KB instead of 37 KB, a 63% cut):
+For clients with no deferral of their own. `tools/list` returns 16 tools instead of 34 (about 18 KB instead of 40 KB, a 56% cut):
 
 - `search_tools`: natural-language or keyword query, optional `category`, returns each match with its **full input schema**. Searches tool names, titles, descriptions, parameter names, and parameter descriptions, so a field name such as `unsettled` or `entity_id` finds the tool that accepts it. Categories: strategies, backtests, orders, positions, accounts, market-data, risk, data, webhooks, middle-office, profile.
 - `call_tool`: invokes a discovered tool by name with an arguments object matching its `input_schema`, and returns that tool's result unchanged.
-- Every state-changing tool (`place_order`, `execute_strategy`, `create_strategy`, `update_strategy`, `create_connection`, `create_webhook`, `delete_webhook`, `sync_portfolio`, `compute_risk`) plus the read anchors `list_accounts`, `list_positions`, `list_orders`, `get_market_data`.
+- Every state-changing tool (`place_order`, `execute_strategy`, `create_strategy`, `update_strategy`, `create_connection`, `create_webhook`, `delete_webhook`, `sync_portfolio`, `compute_risk`, `configure_overlay`) plus the read anchors `list_accounts`, `list_positions`, `list_orders`, `get_market_data`.
 
 `call_tool` dispatches **read-only tools only**. A client gates approval on the tool name it can see, so routing an order through a generic dispatcher would hide it from the check meant to catch it. It also refuses a read-only tool that is already advertised, and answers an unknown name with near matches rather than a guess. Arguments are validated against the real tool schema before dispatch; a rejection returns the offending paths and that tool's schema.
 
@@ -167,7 +176,7 @@ The server is stateless in both eras: no sessions, no `Mcp-Session-Id`, one fres
 
 ### Scope-aware discovery
 
-`tools/list` carries only the tools the calling credential's scopes permit. A `data` key sees 10 tools, not 33; an identity-only OAuth token sees `get_profile` alone; `search_tools` will not return an out-of-scope tool and `call_tool` will not dispatch one. Scopes come from `GET /me` on the REST API, cached per credential for 60 seconds and looked up only for `tools/list`, never on the call path.
+`tools/list` carries only the tools the calling credential's scopes permit. A `data` key sees 10 tools, not 34; an identity-only OAuth token sees `get_profile` alone; `search_tools` will not return an out-of-scope tool and `call_tool` will not dispatch one. Scopes come from `GET /me` on the REST API, cached per credential for 60 seconds and looked up only for `tools/list`, never on the call path.
 
 If the lookup fails, or the REST API deployment predates the `scopes` field, the full catalogue is advertised and the reason is logged: unknown is not the same as none. Filtering is discovery, not enforcement. The REST API remains the only thing that decides what a credential may touch, so a tool that is present can still return 403.
 
@@ -175,8 +184,8 @@ Measured surfaces:
 
 | Endpoint | Full scopes | `data` scope only |
 |---|---|---|
-| `/mcp` | 33 tools, ~37 KB | 10 tools, ~9 KB |
-| `/mcp/compact` | 15 tools, ~14 KB | 6 tools, ~6 KB |
+| `/mcp` | 34 tools, ~40 KB | 10 tools, ~9 KB |
+| `/mcp/compact` | 16 tools, ~18 KB | 6 tools, ~6 KB |
 
 Tool names, arguments, results and pagination are identical on both endpoints. Discovery reads no account data and places no order.
 
@@ -188,7 +197,7 @@ Remote MCP client
   → createMcpHandler, legacy: 'stateless' (2026-07-28 and every legacy revision)
   → fresh stateless server per request
   → user's API credentials, resolved from headers or encrypted OAuth token
-  → CPZ REST API /functions/v1/rest-api/v1 (overlay exposure: cpz gateway /cpz)
+  → CPZ REST API /functions/v1/rest-api/v1 (overlay tools: cpz gateway /cpz)
   → existing user-scoped platform handlers
 ```
 
@@ -211,7 +220,7 @@ The client appends `/v1` to `CPZ_API_BASE_URL`. Its built-in default already inc
 | `PORT` | HTTP port (default 3001) |
 | `CPZ_API_BASE_URL` | REST adapter base before `/v1` |
 | `CPZ_API_TIMEOUT_MS` | Upstream request timeout budget (default 20000 ms) |
-| `CPZ_GATEWAY_BASE_URL` | cpz gateway base for overlay exposure (default `https://api-ai.cpz-lab.com/cpz`) |
+| `CPZ_GATEWAY_BASE_URL` | cpz gateway base for the overlay tools (default `https://api-ai.cpz-lab.com/cpz`) |
 | `MCP_BASE_URL` | Public origin used in OAuth discovery and redirects |
 | `MCP_TOKEN_SECRET` | Shared secret for encrypted OAuth tokens and registrations |
 | `ALLOW_LEGACY_BEARER` | Enables legacy plaintext bearer format only when `true` |

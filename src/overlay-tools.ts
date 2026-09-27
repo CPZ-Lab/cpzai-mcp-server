@@ -1,27 +1,24 @@
 /**
- * Overlay strategies: read what an overlay hedges and how far it is from policy.
+ * Overlay strategies: list and configure them, and read how far each hedge is
+ * from policy.
  *
  * An overlay is a strategy with strategy_role 'overlay' that hedges other
  * strategies or whole broker accounts under a hedge policy (objective, hedge
- * ratio, tolerance band, instruments, benchmark). Two platform routes serve it
- * to a caller holding an API key or one of this server's OAuth tokens:
+ * ratio, tolerance band, instruments, benchmark). Every route here is on the
+ * cpz gateway, takes the caller's own X-CPZ-Key/X-CPZ-Secret and needs the
+ * strategies scope:
  *
- *   - GET /cpz/overlay/exposure on the cpz gateway (strategies scope): the
- *     resolved exposure document, which also carries the targets and the
- *     policy's objective, ratio, band and benchmark.
- *   - GET /v1/strategies on the REST adapter: every row carries strategy_role,
- *     which is how overlays are found.
- *
- * Nothing on either route reads overlay_policies or overlay_targets directly,
- * so hedge_instruments, rebalance_trigger and notes are not visible here, and
- * nothing writes them: save_overlay_config is SECURITY INVOKER and needs a
- * user JWT, which this server never holds. There is deliberately no configure
- * tool until the platform has a user-scoped write route for it.
+ *   - GET /cpz/overlays: every overlay with its policy and targets, straight
+ *     from the tables (no market data).
+ *   - PUT /cpz/overlays/{id}: role, policy and targets saved atomically for
+ *     the key owner (save_overlay_config_as), then read back.
+ *   - GET /cpz/overlay/exposure: the resolved exposure and hedge status, which
+ *     needs prices and, for beta and vol_target, price history.
  */
 import { z } from 'zod';
 import type { McpServer } from "@modelcontextprotocol/server";
 import { callRestApi, type ApiResult } from './api-client.js';
-import { formatResult } from './tool-result.js';
+import { formatResult, invalidArguments } from './tool-result.js';
 
 interface Credentials {
   apiKey: string;
@@ -42,22 +39,13 @@ const readOnlyAnnotations = {
 // large book.
 const EXPOSURE_TIMEOUT_MS = 30_000;
 
-// Strategies are scanned in full to find the overlays, 100 per REST page. A
-// book larger than this is refused rather than listed from a partial scan.
-const STRATEGY_PAGE = 100;
-const MAX_STRATEGY_PAGES = 20;
-
-// Exposure reads run a few at a time so a page of overlays neither serialises
-// behind the slowest nor fans out into the gateway's hourly request budget.
-const EXPOSURE_CONCURRENCY = 3;
-
 // The hedge fields the platform withholds when the book is incomplete.
 const WITHHELD_FIELDS = ['current_ratio', 'drift', 'outside_band', 'suggested_order'] as const;
 
-const UNAVAILABLE_POLICY_FIELDS = ['hedge_instruments', 'rebalance_trigger', 'notes'];
-
 const CONFIGURE_GUIDANCE =
-  'Overlays are configured in CPZAI Strategy Lab (Overlay tab). This server has no overlay write tool: save_overlay_config needs a signed-in user session, not an API credential.';
+  'Make the strategy an overlay, or give it a hedge policy and targets, with configure_overlay (role overlay, a policy and at least one target). list_overlays shows the current configuration.';
+
+const OBJECTIVES = ['beta', 'fx', 'duration', 'delta', 'vol_target', 'tail', 'custom'] as const;
 
 type Json = Record<string, unknown>;
 
@@ -68,6 +56,8 @@ function isObject(value: unknown): value is Json {
 function failure(status: number, code: string, error: string, extra: Json = {}) {
   return { ok: false, status, data: { error, code, ...extra } };
 }
+
+// ── Exposure ─────────────────────────────────────────────────────────────
 
 /** An exposure document this server can present, or the reason it cannot. */
 type Exposure =
@@ -104,177 +94,100 @@ function ratioStatus(complete: boolean, hedge: Json): 'measured' | 'not_measured
   return typeof hedge.current_ratio === 'number' && Number.isFinite(hedge.current_ratio) ? 'measured' : 'not_measured';
 }
 
-/** The platform's 409s point at save_overlay_config, which this server cannot call. */
+/** The platform's 409s say the strategy is not (fully) an overlay yet. */
 function withGuidance(result: ApiResult): ApiResult {
   if (result.status !== 409 || !isObject(result.data)) return result;
   return { ...result, data: { ...result.data, guidance: CONFIGURE_GUIDANCE } };
 }
 
-function fetchExposure(strategyId: string, creds: Credentials) {
-  return callRestApi({
-    method: 'GET',
-    api: 'gateway',
-    path: '/overlay/exposure',
-    query: { strategy_id: strategyId },
-    timeoutMs: EXPOSURE_TIMEOUT_MS,
-    ...creds,
-  });
-}
+// ── Configuration input ──────────────────────────────────────────────────
 
-async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const out: R[] = new Array(items.length);
-  let next = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (next < items.length) {
-      const index = next++;
-      out[index] = await fn(items[index]);
+const strategyId = z.string().uuid();
+const symbol = z.string().trim().min(1).max(32)
+  .regex(/^[A-Za-z0-9^][A-Za-z0-9./:_=^\-]*$/, 'Use a ticker symbol such as SPY')
+  .transform(value => value.toUpperCase());
+// Weight is the share of the target's exposure this overlay answers for; the
+// database accepts (0, 10].
+const weight = z.number().finite().gt(0).max(10).optional().describe('Share of the target\'s exposure this overlay hedges, greater than 0 and at most 10 (default 1).');
+
+// Strict objects: a misspelt field must be refused, not dropped and replaced
+// by the database default without anyone noticing.
+const policySchema = z.strictObject({
+  objective: z.enum(OBJECTIVES).describe('What the overlay neutralises. beta needs benchmark_symbol.'),
+  hedge_ratio: z.number().finite().min(0).max(5).optional().describe('Target hedge ratio, 0 to 5; 1 fully offsets the objective\'s exposure (default 1).'),
+  tolerance_band: z.number().finite().gt(0).max(1).optional().describe('Rebalance when |actual - target| / target exceeds this; greater than 0 and at most 1 (default 0.1).'),
+  hedge_instruments: z.array(symbol).max(100).optional().describe('Symbols the overlay hedges with (default none).'),
+  benchmark_symbol: symbol.optional().describe('Benchmark for beta; required when objective is beta.'),
+  rebalance_trigger: z.enum(['band', 'schedule']).optional().describe('band or schedule (default band).'),
+  notes: z.string().max(2000).optional(),
+});
+
+const targetSchema = z.discriminatedUnion('kind', [
+  z.strictObject({
+    kind: z.literal('strategy'),
+    strategy_id: strategyId.describe('A strategy you own, other than the overlay itself.'),
+    weight,
+  }),
+  z.strictObject({
+    kind: z.literal('account'),
+    account_key: z.string().trim().min(1).max(200).describe('Account id as list_accounts or list_positions reports it.'),
+    broker: z.string().trim().min(1).max(64).describe('Broker of that account, e.g. alpaca, ibkr.'),
+    environment: z.enum(['paper', 'live']),
+    weight,
+  }),
+]);
+
+type Policy = z.infer<typeof policySchema>;
+type Target = z.infer<typeof targetSchema>;
+
+/**
+ * The rules the database enforces that a schema cannot express. The database
+ * stays the authority (ownership, account membership and cycles are only
+ * knowable there); this refuses the obvious cases before a write is sent.
+ */
+function configProblem(id: string, role: 'overlay' | 'alpha', policy: Policy | undefined, targets: Target[] | undefined): string | null {
+  if (role === 'alpha') {
+    if (policy !== undefined || targets !== undefined) {
+      return 'role alpha removes the overlay\'s policy and targets; pass neither policy nor targets with it.';
     }
-  });
-  await Promise.all(workers);
-  return out;
-}
-
-const STRATEGY_FIELDS = ['title', 'status', 'strategy_type', 'allow_short', 'created_at', 'updated_at'];
-
-/** Every overlay strategy the caller owns, from a full scan of /strategies. */
-async function scanOverlays(creds: Credentials): Promise<{ ok: true; rows: Json[] } | { ok: false; result: ReturnType<typeof failure> | ApiResult }> {
-  const overlays: Json[] = [];
+    return null;
+  }
+  if (!policy) return 'an overlay needs a policy (at least an objective).';
+  if (!targets || targets.length === 0) return 'an overlay needs at least one target (a strategy or an account).';
+  if (policy.objective === 'beta' && !policy.benchmark_symbol) return 'a beta overlay needs benchmark_symbol.';
   const seen = new Set<string>();
-  for (let page = 0; ; page++) {
-    if (page >= MAX_STRATEGY_PAGES) {
-      return {
-        ok: false,
-        result: failure(422, 'strategy_scan_too_large',
-          `More than ${MAX_STRATEGY_PAGES * STRATEGY_PAGE} strategies: list_overlays cannot guarantee a complete scan, so it lists none. Use list_strategies and get_overlay_exposure instead.`),
-      };
+  for (const target of targets) {
+    if (target.kind === 'strategy' && target.strategy_id.toLowerCase() === id.toLowerCase()) {
+      return 'an overlay cannot target itself.';
     }
-    const result = await callRestApi({
-      method: 'GET',
-      path: '/strategies',
-      // Oldest first, so a strategy created mid-scan lands on a later page
-      // instead of shifting one already read onto the next.
-      query: { limit: String(STRATEGY_PAGE), offset: String(page * STRATEGY_PAGE), sort_by: 'created_at', sort_order: 'asc' },
-      ...creds,
-    });
-    if (!result.ok) return { ok: false, result };
-    const rows = isObject(result.data) ? result.data.data : undefined;
-    if (!Array.isArray(rows)) {
-      return {
-        ok: false,
-        result: failure(502, 'invalid_upstream_response', 'The strategies list carried no data array; overlays cannot be listed from it.', { request_id: result.requestId }),
-      };
-    }
-    for (const row of rows) {
-      if (!isObject(row) || typeof row.id !== 'string') {
-        return {
-          ok: false,
-          result: failure(502, 'invalid_upstream_response', 'A strategies row carried no id; overlays cannot be listed from it.', { request_id: result.requestId }),
-        };
-      }
-      // A row without the column is not an alpha strategy; it is a platform
-      // that cannot say. Listing zero overlays from it would be a guess.
-      if (!('strategy_role' in row)) {
-        return {
-          ok: false,
-          result: failure(502, 'strategy_role_unavailable',
-            'The platform did not report strategy_role on strategies, so overlays cannot be told apart from alpha strategies.', { request_id: result.requestId }),
-        };
-      }
-      if (seen.has(row.id)) continue;
-      seen.add(row.id);
-      if (row.strategy_role === 'overlay') overlays.push(row);
-    }
-    if (rows.length < STRATEGY_PAGE) return { ok: true, rows: overlays };
+    const key = target.kind === 'strategy'
+      ? `strategy:${target.strategy_id.toLowerCase()}`
+      : `account:${target.broker.trim().toLowerCase()}:${target.environment}:${target.account_key.trim()}`;
+    if (seen.has(key)) return `the same target is listed twice (${key.replace(/^[^:]+:/, '')}).`;
+    seen.add(key);
   }
+  return null;
 }
 
-/** One overlay's configuration and hedge status, read from its exposure. */
-async function describeOverlay(row: Json, creds: Credentials): Promise<Json> {
-  const strategyId = row.id as string;
-  const entry: Json = { strategy_id: strategyId };
-  for (const field of STRATEGY_FIELDS) if (field in row) entry[field] = row[field];
-
-  const result = await fetchExposure(strategyId, creds);
-  const upstream = isObject(result.data) ? result.data : {};
-  if (!result.ok) {
-    // A policy or target list that does not exist yet is a state, not a
-    // failure: the platform ran the read and found an unconfigured overlay.
-    if (result.status === 409 && upstream.error === 'overlay_not_configured') {
-      return {
-        ...entry, configured: false, policy: null, targets: null, hedge: null,
-        note: typeof upstream.message === 'string' ? upstream.message : 'The overlay has no hedge policy or targets yet.',
-        guidance: CONFIGURE_GUIDANCE,
-      };
-    }
-    return {
-      ...entry, configured: null, policy: null, targets: null, hedge: null,
-      error: {
-        status: result.status,
-        error: upstream.error ?? 'overlay_exposure_failed',
-        ...(typeof upstream.message === 'string' ? { message: upstream.message } : {}),
-        ...(upstream.code !== undefined ? { code: upstream.code } : {}),
-        request_id: result.requestId,
-      },
-    };
-  }
-
-  const exposure = readExposure(result.data);
-  if (!exposure.ok) {
-    return {
-      ...entry, configured: null, policy: null, targets: null, hedge: null,
-      error: {
-        status: 502,
-        error: 'invalid_upstream_response',
-        message: `The overlay exposure response could not be read: ${exposure.reason}.`,
-        request_id: result.requestId,
-      },
-    };
-  }
-
-  const { doc } = exposure;
-  const hedge = withheldHedge(doc, { request_id: result.requestId, strategy_id: strategyId });
-  return {
-    ...entry,
-    configured: true,
-    policy: {
-      objective: hedge.objective ?? null,
-      hedge_ratio: hedge.target_ratio ?? null,
-      tolerance_band: hedge.tolerance_band ?? null,
-      benchmark_symbol: doc.benchmark_symbol ?? null,
-    },
-    targets: doc.targets.map(target => {
-      const t = isObject(target) ? target : {};
-      return {
-        kind: t.kind ?? null,
-        strategy_id: t.strategy_id ?? null,
-        account_key: t.account_key ?? null,
-        broker: t.broker ?? null,
-        environment: t.environment ?? null,
-        weight: t.weight ?? null,
-      };
-    }),
-    hedge: {
-      complete: doc.complete,
-      hedge_ratio_status: ratioStatus(doc.complete, hedge),
-      current_ratio: hedge.current_ratio ?? null,
-      drift: hedge.drift ?? null,
-      outside_band: hedge.outside_band ?? null,
-      reason: hedge.reason ?? null,
-      as_of: doc.as_of ?? null,
-    },
-  };
-}
+// ── Registration ─────────────────────────────────────────────────────────
 
 export function registerOverlayTools(server: McpServer, creds: Credentials) {
   server.registerTool('get_overlay_exposure', {
     title: 'Get Overlay Exposure',
     description: 'Resolve one overlay strategy\'s hedge: what its targets (strategies or broker accounts) carry, what the overlay itself holds, the combined book, and how far the hedge is from policy (objective, target ratio, tolerance band, current ratio, drift, advisory suggested order), plus hedge effectiveness and base/overlay/combined P&L. When complete is false a price or price history is missing: the hedge ratio and suggested order are withheld (null), never estimated, and no hedge should be sized from the result. Read-only; places no order. Requires the strategies scope.',
     inputSchema: z.object({
-      strategy_id: z.string().uuid().describe('Overlay strategy UUID, from list_overlays or list_strategies.'),
+      strategy_id: strategyId.describe('Overlay strategy UUID, from list_overlays or list_strategies.'),
     }),
     annotations: readOnlyAnnotations,
   }, async ({ strategy_id }) => {
-    const result = await fetchExposure(strategy_id, creds);
+    const result = await callRestApi({
+      method: 'GET',
+      api: 'gateway',
+      path: '/overlay/exposure',
+      query: { strategy_id },
+      timeoutMs: EXPOSURE_TIMEOUT_MS,
+      ...creds,
+    });
     if (!result.ok) return formatResult(withGuidance(result));
 
     const exposure = readExposure(result.data);
@@ -310,41 +223,90 @@ export function registerOverlayTools(server: McpServer, creds: Credentials) {
 
   server.registerTool('list_overlays', {
     title: 'List Overlays',
-    description: 'List your overlay strategies (strategies whose role is overlay) with their hedge configuration: targets (strategies or broker accounts, with weights), policy (objective, hedge ratio, tolerance band, benchmark), and current hedge status. The configuration comes from each overlay\'s exposure read, so a page of overlays costs one read per overlay and needs the platform market-data source; hedge_instruments, rebalance_trigger and notes are not exposed by any API route yet. total is the exact number of overlays. Requires the strategies scope.',
-    inputSchema: z.object({
-      limit: z.number().int().min(1).max(25).optional().describe('Overlays in this page (default 10, maximum 25). Each one costs an exposure read.'),
-      offset: z.number().int().min(0).optional().describe('Overlays to skip (default 0). Increase by the returned count for the next page.'),
-    }),
+    description: 'List your overlay strategies with their full configuration: policy (objective, hedge ratio, tolerance band, hedge instruments, benchmark, rebalance trigger, notes) and targets (strategies or broker accounts, with weights). configured is true when an overlay has a policy and at least one target. One read, no market data; for hedge status and drift use get_overlay_exposure. The platform returns at most 200 overlays, ordered by title; truncated says whether more exist. Requires the strategies scope.',
+    inputSchema: z.object({}),
     annotations: readOnlyAnnotations,
-  }, async (args) => {
-    const limit = args.limit ?? 10;
-    const offset = args.offset ?? 0;
+  }, async () => {
+    const result = await callRestApi({ method: 'GET', api: 'gateway', path: '/overlays', ...creds });
+    if (!result.ok) return formatResult(result);
+    const body = isObject(result.data) ? result.data : {};
+    if (!Array.isArray(body.overlays) || typeof body.truncated !== 'boolean') {
+      console.error('[overlay] overlay list unreadable', { request_id: result.requestId });
+      return formatResult(failure(502, 'invalid_upstream_response',
+        'The overlay list carried no overlays array or no truncated flag; it cannot be presented as your overlays.',
+        { request_id: result.requestId }));
+    }
+    return formatResult({
+      ok: true,
+      status: 200,
+      data: {
+        data: body.overlays,
+        count: body.overlays.length,
+        truncated: body.truncated,
+        ...(body.truncated ? {
+          note: `The platform returned its first ${body.overlays.length} overlays by title and more exist. This is not the complete list.`,
+        } : {}),
+      },
+    });
+  });
 
-    const scan = await scanOverlays(creds);
-    if (!scan.ok) return formatResult(scan.result);
+  server.registerTool('configure_overlay', {
+    title: 'Configure Overlay',
+    description: 'Make a strategy an overlay, or change or remove its overlay configuration, in one atomic write. role overlay needs a policy and at least one target, and REPLACES the whole policy and target list: policy fields you omit take their defaults (hedge_ratio 1, tolerance_band 0.1, rebalance_trigger band, no hedge instruments, no notes) and targets you do not list are removed, so read list_overlays first when changing one field. role alpha removes the policy and targets and makes it an ordinary strategy again. Becoming an overlay turns short selling on for the strategy. Places no order, but changes what the overlay hedges from its next run. Requires the strategies scope.',
+    inputSchema: z.object({
+      strategy_id: strategyId.describe('Strategy UUID to configure, from list_strategies or list_overlays.'),
+      role: z.enum(['overlay', 'alpha']).describe('overlay to set a policy and targets; alpha to remove them.'),
+      policy: policySchema.optional().describe('Required for role overlay; omit for role alpha.'),
+      targets: z.array(targetSchema).max(100).optional().describe('Required for role overlay (at least one); omit for role alpha. Replaces the current targets.'),
+    }),
+    // It replaces the policy and the target list wholesale, so it can remove
+    // configuration; the same call repeated leaves the same configuration.
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+  }, async ({ strategy_id, role, policy, targets }) => {
+    const problem = configProblem(strategy_id, role, policy, targets);
+    if (problem) return invalidArguments(problem);
 
-    const page = scan.rows.slice(offset, offset + limit);
-    const entries = await mapLimit(page, EXPOSURE_CONCURRENCY, row => describeOverlay(row, creds));
-    const body = {
-      data: entries,
-      count: entries.length,
-      total: scan.rows.length,
-      offset,
-      limit,
-      unavailable_policy_fields: UNAVAILABLE_POLICY_FIELDS,
-    };
-
-    // An overlay whose configuration could not be read is unknown, not
-    // unconfigured: the page is an error, with every entry still attached.
-    const failed = entries.filter(entry => entry.error !== undefined);
-    if (failed.length > 0) {
-      console.error('[overlay] list_overlays could not read every overlay', {
-        request_id: creds.requestId,
-        failed: failed.map(entry => ({ strategy_id: entry.strategy_id, status: (entry.error as Json).status })),
+    const result = await callRestApi({
+      method: 'PUT',
+      api: 'gateway',
+      path: `/overlays/${strategy_id}`,
+      body: role === 'alpha' ? { role } : { role, policy, targets },
+      ...creds,
+    });
+    if (!result.ok) {
+      console.error('[overlay] configure_overlay failed', {
+        request_id: result.requestId,
+        strategy_id,
+        role,
+        status: result.status,
+        error: isObject(result.data) ? result.data.error : undefined,
       });
-      return formatResult(failure(502, 'overlay_read_failed',
-        `The configuration of ${failed.length} of ${entries.length} overlays could not be read; see data[].error. Their configuration is unknown, not empty.`,
-        body));
+      return formatResult(result);
+    }
+
+    // A 200 is the platform saying the transaction committed. Anything else
+    // in its place is not proof of a save, so it is reported as unconfirmed.
+    const body = isObject(result.data) ? result.data : null;
+    if (!body || !isObject(body.saved) || !('overlay' in body)) {
+      console.error('[overlay] configure_overlay returned an unreadable 200', { request_id: result.requestId, strategy_id });
+      return formatResult(failure(502, 'invalid_upstream_response',
+        'The platform answered the save with a response this server cannot read, so whether the configuration was saved is unconfirmed.',
+        {
+          request_id: result.requestId,
+          operation_outcome: 'unknown',
+          guidance: 'Check the configuration with list_overlays before saving again.',
+        }));
+    }
+    if (body.overlay === null) {
+      // Saved, but the read-back failed: the save stands and says so.
+      return formatResult({
+        ok: true,
+        status: 200,
+        data: {
+          ...body,
+          note: 'The configuration was saved, but the platform could not read it back. Confirm it with list_overlays.',
+        },
+      });
     }
     return formatResult({ ok: true, status: 200, data: body });
   });

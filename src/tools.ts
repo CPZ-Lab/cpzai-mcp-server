@@ -128,9 +128,8 @@ export function registerTools(server: McpServer, req: Request) {
     return formatResult(result);
   });
 
-  // Overlays are strategies that hedge other strategies or accounts. Read-only
-  // here: the platform has no API-credential route that writes their policy
-  // and targets (see src/overlay-tools.ts).
+  // Overlays are strategies that hedge other strategies or accounts; their
+  // routes live on the cpz gateway (see src/overlay-tools.ts).
   registerOverlayTools(server, creds);
 
   // ── Backtests ───────────────────────────────────────────────

@@ -115,6 +115,7 @@ const CATEGORY_BY_TOOL: Record<string, ToolCategory> = {
   update_strategy: 'strategies',
   get_overlay_exposure: 'strategies',
   list_overlays: 'strategies',
+  configure_overlay: 'strategies',
   execute_strategy: 'strategies',
   get_backtest_results: 'backtests',
   get_backtest_result: 'backtests',

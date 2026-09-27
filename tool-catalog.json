@@ -8,6 +8,16 @@
     }
   },
   {
+    "name": "configure_overlay",
+    "title": "Configure Overlay",
+    "description": "Make a strategy an overlay, or change or remove its overlay configuration, in one atomic write. role overlay needs a policy and at least one target, and REPLACES the whole policy and target list: policy fields you omit take their defaults (hedge_ratio 1, tolerance_band 0.1, rebalance_trigger band, no hedge instruments, no notes) and targets you do not list are removed, so read list_overlays first when changing one field. role alpha removes the policy and targets and makes it an ordinary strategy again. Becoming an overlay turns short selling on for the strategy. Places no order, but changes what the overlay hedges from its next run. Requires the strategies scope.",
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": true
+    }
+  },
+  {
     "name": "create_connection",
     "title": "Create Data Connection",
     "description": "Store a data-provider API key. The credential is encrypted server-side and can never be read back. One connection per provider.",
@@ -261,7 +271,7 @@
   {
     "name": "list_overlays",
     "title": "List Overlays",
-    "description": "List your overlay strategies (strategies whose role is overlay) with their hedge configuration: targets (strategies or broker accounts, with weights), policy (objective, hedge ratio, tolerance band, benchmark), and current hedge status. The configuration comes from each overlay's exposure read, so a page of overlays costs one read per overlay and needs the platform market-data source; hedge_instruments, rebalance_trigger and notes are not exposed by any API route yet. total is the exact number of overlays. Requires the strategies scope.",
+    "description": "List your overlay strategies with their full configuration: policy (objective, hedge ratio, tolerance band, hedge instruments, benchmark, rebalance trigger, notes) and targets (strategies or broker accounts, with weights). configured is true when an overlay has a policy and at least one target. One read, no market data; for hedge status and drift use get_overlay_exposure. The platform returns at most 200 overlays, ordered by title; truncated says whether more exist. Requires the strategies scope.",
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false,

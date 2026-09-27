@@ -46,7 +46,7 @@ describe('progressive tool discovery', () => {
     const pair = await connect('full');
     open.push(pair);
     const names = (await pair.client.listTools()).tools.map(tool => tool.name);
-    expect(names).toHaveLength(33);
+    expect(names).toHaveLength(34);
     expect(names).not.toContain('search_tools');
     expect(names).not.toContain('call_tool');
     expect(fetchMock).not.toHaveBeenCalled();
@@ -62,6 +62,7 @@ describe('progressive tool discovery', () => {
     for (const write of [
       'place_order', 'execute_strategy', 'create_strategy', 'update_strategy',
       'create_connection', 'create_webhook', 'delete_webhook', 'sync_portfolio', 'compute_risk',
+      'configure_overlay',
     ]) {
       expect(names).toContain(write);
     }

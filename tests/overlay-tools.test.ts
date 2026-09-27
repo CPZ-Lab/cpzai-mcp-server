@@ -5,14 +5,12 @@ import type { Request as ExpressRequest } from 'express';
 
 const OVERLAY = '5a5d40e6-53f9-4be6-9ebc-d0f83a7f1b71';
 const OVERLAY_B = '96043206-24a4-4d63-9cd7-04c51ccf7d7c';
-const OVERLAY_C = '0b8f3c52-6a1e-4d2b-9f41-2c7e8d9a0b13';
 const ALPHA = '123e4567-e89b-42d3-a456-426614174000';
 const HEADERS = { 'x-cpz-key': 'test-key', 'x-cpz-secret': 'test-secret', 'x-request-id': 'overlay-test' };
 
-const REST = 'https://api.example.test/functions/v1/rest-api/v1';
 const GATEWAY = 'https://gateway.example.test/cpz';
 
-type Handler = (url: URL, init: RequestInit) => Response | Promise<Response>;
+type Handler = (url: URL, init: RequestInit) => Response | undefined | Promise<Response | undefined>;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -52,13 +50,33 @@ const incompleteHedge = {
   reason: 'incomplete: no price for XYZ',
 };
 
-function strategyRow(id: string, role: 'alpha' | 'overlay', extra: Record<string, unknown> = {}) {
+/** An OverlayConfigDoc, shaped like the gateway's GET /overlays entries. */
+function configDoc(id: string, overrides: Record<string, unknown> = {}) {
   return {
-    id, user_id: 'u1', title: `Strategy ${id.slice(0, 4)}`, status: 'active', strategy_type: 'momentum',
-    strategy_role: role, allow_short: role === 'overlay', python_code: 'print("secret sauce")',
-    created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-02T00:00:00Z', ...extra,
+    strategy_id: id,
+    title: 'SPY beta hedge',
+    status: 'active',
+    role: 'overlay',
+    allow_short: true,
+    configured: true,
+    policy: {
+      objective: 'beta', hedge_ratio: 1, tolerance_band: 0.1, hedge_instruments: ['SPY'],
+      benchmark_symbol: 'SPY', rebalance_trigger: 'band', notes: 'hedge the momentum book',
+      updated_at: '2026-09-27T10:00:00Z',
+    },
+    targets: [
+      { kind: 'strategy', strategy_id: ALPHA, weight: 1 },
+      { kind: 'account', account_key: 'PA123', broker: 'alpaca', environment: 'paper', weight: 0.5 },
+    ],
+    ...overrides,
   };
 }
+
+const betaPolicy = { objective: 'beta', hedge_ratio: 0.8, tolerance_band: 0.05, benchmark_symbol: 'spy', hedge_instruments: ['spy', 'ivv'], rebalance_trigger: 'band', notes: 'half the book' };
+const targets = [
+  { kind: 'strategy', strategy_id: ALPHA, weight: 1 },
+  { kind: 'account', account_key: 'PA123', broker: 'alpaca', environment: 'paper' },
+];
 
 function structured(result: unknown): Record<string, any> {
   return (result as { structuredContent: Record<string, any> }).structuredContent;
@@ -112,12 +130,14 @@ describe('overlay tools over MCP', () => {
     vi.restoreAllMocks();
   });
 
-  it('advertises both tools as read-only and idempotent, and no write tool', async () => {
+  it('advertises the two reads as read-only and configure_overlay as a destructive write', async () => {
     const { tools } = await client.listTools();
-    expect(tools.map(tool => tool.name).sort()).toEqual(['get_overlay_exposure', 'list_overlays']);
-    for (const tool of tools) {
+    expect(tools.map(tool => tool.name).sort()).toEqual(['configure_overlay', 'get_overlay_exposure', 'list_overlays']);
+    for (const tool of tools.filter(tool => tool.name !== 'configure_overlay')) {
       expect(tool.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false, idempotentHint: true });
     }
+    const configure = tools.find(tool => tool.name === 'configure_overlay');
+    expect(configure?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true, idempotentHint: true });
   });
 
   describe('get_overlay_exposure', () => {
@@ -197,14 +217,14 @@ describe('overlay tools over MCP', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
-    it.each(['not_an_overlay', 'overlay_not_configured'])('surfaces a 409 %s with guidance this server can honour', async (code) => {
+    it.each(['not_an_overlay', 'overlay_not_configured'])('surfaces a 409 %s pointing at configure_overlay', async (code) => {
       on(() => json({ error: code, message: 'set it up in the Overlay tab or with save_overlay_config' }, 409));
       const result = await client.callTool({ name: 'get_overlay_exposure', arguments: { strategy_id: OVERLAY } });
       expect(result.isError).toBe(true);
       const body = structured(result);
       expect(body).toMatchObject({ error: code, upstream_status: 409 });
-      expect(body.guidance).toContain('Strategy Lab');
-      expect(body.guidance).toContain('no overlay write tool');
+      expect(body.guidance).toContain('configure_overlay');
+      expect(body.guidance).toContain('list_overlays');
     });
 
     it('surfaces a 503 when the platform has no market data', async () => {
@@ -239,137 +259,213 @@ describe('overlay tools over MCP', () => {
   });
 
   describe('list_overlays', () => {
-    function strategies(pages: Array<Array<Record<string, unknown>>>) {
-      on(url => {
-        if (!url.toString().startsWith(`${REST}/strategies`)) return undefined as unknown as Response;
-        const offset = Number(url.searchParams.get('offset'));
-        return json({ data: pages[offset / 100] ?? [], count: (pages[offset / 100] ?? []).length });
-      });
-    }
-
-    function exposures(byId: Record<string, Response | (() => Response)>) {
-      on(url => {
-        if (!url.toString().startsWith(`${GATEWAY}/overlay/exposure`)) return undefined as unknown as Response;
-        const entry = byId[url.searchParams.get('strategy_id') ?? ''];
-        if (!entry) throw new Error(`no exposure fixture for ${url}`);
-        return typeof entry === 'function' ? entry() : entry.clone();
-      });
-    }
-
-    it('scans every strategy page, keeps overlays only, and reads each configuration', async () => {
-      const first = Array.from({ length: 100 }, (_, i) => strategyRow(
-        i === 0 ? OVERLAY : `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`, i === 0 ? 'overlay' : 'alpha'));
-      strategies([first, [strategyRow(OVERLAY_B, 'overlay'), strategyRow(ALPHA, 'alpha')]]);
-      exposures({
-        [OVERLAY]: json(exposureDoc(OVERLAY)),
-        [OVERLAY_B]: json(exposureDoc(OVERLAY_B, { complete: false, missing_prices: ['XYZ'] }, incompleteHedge)),
-      });
-
+    it('reads every overlay configuration in one gateway call', async () => {
+      const overlays = [configDoc(OVERLAY), configDoc(OVERLAY_B, { configured: false, policy: null, targets: [] })];
+      on(() => json({ overlays, truncated: false }));
       const result = await client.callTool({ name: 'list_overlays', arguments: {} });
       expect(result.isError).not.toBe(true);
 
-      const scans = calls(`${REST}/strategies`);
-      expect(scans.map(call => Object.fromEntries(call.url.searchParams))).toEqual([
-        { limit: '100', offset: '0', sort_by: 'created_at', sort_order: 'asc' },
-        { limit: '100', offset: '100', sort_by: 'created_at', sort_order: 'asc' },
-      ]);
-      expect(scans.every(call => call.init.method === 'GET')).toBe(true);
-      expect(calls(GATEWAY).map(call => call.url.searchParams.get('strategy_id')).sort()).toEqual([OVERLAY, OVERLAY_B].sort());
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [call] = calls(GATEWAY);
+      expect(call.url.toString()).toBe(`${GATEWAY}/overlays`);
+      expect(call.init.method).toBe('GET');
+      expect(call.init.headers).toMatchObject({ 'X-CPZ-Key': 'test-key', 'X-CPZ-Secret': 'test-secret', 'x-request-id': 'overlay-test' });
 
       const body = structured(result);
-      expect(body).toMatchObject({ count: 2, total: 2, offset: 0, limit: 10 });
-      expect(body.unavailable_policy_fields).toEqual(['hedge_instruments', 'rebalance_trigger', 'notes']);
-      const [a, b] = body.data;
-      expect(a).toMatchObject({
-        strategy_id: OVERLAY, status: 'active', allow_short: true, configured: true,
-        policy: { objective: 'beta', hedge_ratio: 1, tolerance_band: 0.1, benchmark_symbol: 'SPY' },
-        hedge: { complete: true, hedge_ratio_status: 'measured', current_ratio: 0.75, outside_band: true },
-      });
-      expect(a.targets).toEqual([
-        { kind: 'strategy', strategy_id: ALPHA, account_key: null, broker: null, environment: null, weight: 1 },
-        { kind: 'account', strategy_id: null, account_key: 'PA123', broker: 'alpaca', environment: 'paper', weight: 0.5 },
-      ]);
-      expect(b.hedge).toMatchObject({ complete: false, hedge_ratio_status: 'withheld', current_ratio: null, drift: null, outside_band: null });
-      // Stored strategy code never rides along in a list of overlays.
-      expect(JSON.stringify(result.content)).not.toContain('secret sauce');
+      expect(body).toEqual({ data: overlays, count: 2, truncated: false });
+      expect(body.data[0].policy).toMatchObject({ hedge_instruments: ['SPY'], rebalance_trigger: 'band', notes: 'hedge the momentum book' });
     });
 
-    it('reports an overlay with no policy or targets as unconfigured, not as a failure', async () => {
-      strategies([[strategyRow(OVERLAY, 'overlay')]]);
-      exposures({ [OVERLAY]: json({ error: 'overlay_not_configured', message: 'the overlay has no targets yet' }, 409) });
+    it('returns an empty list as an empty list', async () => {
+      on(() => json({ overlays: [], truncated: false }));
       const result = await client.callTool({ name: 'list_overlays', arguments: {} });
       expect(result.isError).not.toBe(true);
-      expect(structured(result).data[0]).toMatchObject({
-        strategy_id: OVERLAY, configured: false, policy: null, targets: null, note: 'the overlay has no targets yet',
-      });
+      expect(structured(result)).toEqual({ data: [], count: 0, truncated: false });
     });
 
-    it('fails the page when a configuration cannot be read, keeping every entry', async () => {
+    it('says plainly when the platform truncated the list', async () => {
+      on(() => json({ overlays: [configDoc(OVERLAY)], truncated: true }));
+      const body = structured(await client.callTool({ name: 'list_overlays', arguments: {} }));
+      expect(body.truncated).toBe(true);
+      expect(body.note).toContain('not the complete list');
+    });
+
+    it.each([
+      [{ truncated: false }],
+      [{ overlays: {}, truncated: false }],
+      [{ overlays: [] }],
+      [[]],
+    ])('refuses a 200 it cannot read as the overlay list: %j', async (payload) => {
       vi.spyOn(console, 'error').mockImplementation(() => {});
-      strategies([[strategyRow(OVERLAY, 'overlay'), strategyRow(OVERLAY_B, 'overlay')]]);
-      exposures({
-        [OVERLAY]: json(exposureDoc(OVERLAY)),
-        [OVERLAY_B]: () => json({ error: 'ledger_read_failed', message: 'position_lots: timeout' }, 502),
-      });
+      on(() => json(payload));
       const result = await client.callTool({ name: 'list_overlays', arguments: {} });
       expect(result.isError).toBe(true);
+      expect(structured(result).code).toBe('invalid_upstream_response');
+    });
+
+    it.each([
+      [502, 'overlay_read_failed'],
+      [403, 'insufficient_scope'],
+    ])('surfaces a %i %s as an error', async (status, code) => {
+      on(() => json({ error: code, message: 'upstream said no' }, status));
+      const result = await client.callTool({ name: 'list_overlays', arguments: {} });
+      expect(result.isError).toBe(true);
+      expect(structured(result)).toMatchObject({ error: code, upstream_status: status, message: 'upstream said no' });
+    });
+  });
+
+  describe('configure_overlay', () => {
+    function putCalls() {
+      return calls(`${GATEWAY}/overlays/`).filter(call => call.init.method === 'PUT');
+    }
+
+    it('saves role, policy and targets with one PUT and returns the saved configuration', async () => {
+      const saved = { strategy_id: OVERLAY, role: 'overlay', targets: 2 };
+      on(() => json({ saved, overlay: configDoc(OVERLAY) }));
+      const result = await client.callTool({
+        name: 'configure_overlay',
+        arguments: { strategy_id: OVERLAY, role: 'overlay', policy: betaPolicy, targets },
+      });
+      expect(result.isError).not.toBe(true);
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [call] = putCalls();
+      expect(call.url.toString()).toBe(`${GATEWAY}/overlays/${OVERLAY}`);
+      expect(call.init.headers).toMatchObject({ 'X-CPZ-Key': 'test-key', 'X-CPZ-Secret': 'test-secret', 'x-request-id': 'overlay-test' });
+      expect(JSON.parse(String(call.init.body))).toEqual({
+        role: 'overlay',
+        // Symbols are sent upper-case, as the database stores them.
+        policy: { ...betaPolicy, benchmark_symbol: 'SPY', hedge_instruments: ['SPY', 'IVV'] },
+        targets,
+      });
+      expect(structured(result)).toEqual({ saved, overlay: configDoc(OVERLAY) });
+    });
+
+    it('sends role alpha alone to remove the configuration', async () => {
+      on(() => json({ saved: { strategy_id: OVERLAY, role: 'alpha', targets: 0 }, overlay: configDoc(OVERLAY, { role: 'alpha', configured: false, policy: null, targets: [] }) }));
+      const result = await client.callTool({ name: 'configure_overlay', arguments: { strategy_id: OVERLAY, role: 'alpha' } });
+      expect(result.isError).not.toBe(true);
+      expect(JSON.parse(String(putCalls()[0].init.body))).toEqual({ role: 'alpha' });
+    });
+
+    it('sends only the policy fields given, so the database defaults are its own', async () => {
+      on(() => json({ saved: { strategy_id: OVERLAY, role: 'overlay', targets: 1 }, overlay: configDoc(OVERLAY) }));
+      await client.callTool({
+        name: 'configure_overlay',
+        arguments: { strategy_id: OVERLAY, role: 'overlay', policy: { objective: 'tail' }, targets: [targets[0]] },
+      });
+      expect(JSON.parse(String(putCalls()[0].init.body)).policy).toEqual({ objective: 'tail' });
+    });
+
+    it('reports a save whose read-back failed as saved, and says it is unconfirmed', async () => {
+      on(() => json({ saved: { strategy_id: OVERLAY, role: 'overlay', targets: 2 }, overlay: null, read_back_error: { error: 'overlay_read_failed' } }));
+      const result = await client.callTool({
+        name: 'configure_overlay',
+        arguments: { strategy_id: OVERLAY, role: 'overlay', policy: betaPolicy, targets },
+      });
+      expect(result.isError).not.toBe(true);
       const body = structured(result);
-      expect(body.code).toBe('overlay_read_failed');
-      expect(body.error).toContain('1 of 2 overlays');
-      expect(body.error).toContain('unknown, not empty');
-      expect(body.data[0]).toMatchObject({ strategy_id: OVERLAY, configured: true });
-      expect(body.data[1]).toMatchObject({
-        strategy_id: OVERLAY_B, configured: null, policy: null, targets: null,
-        error: { status: 502, error: 'ledger_read_failed', message: 'position_lots: timeout' },
+      expect(body.saved).toMatchObject({ role: 'overlay' });
+      expect(body.overlay).toBeNull();
+      expect(body.read_back_error).toEqual({ error: 'overlay_read_failed' });
+      expect(body.note).toContain('saved');
+      expect(body.note).toContain('list_overlays');
+    });
+
+    it('surfaces the platform 400 message verbatim', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      const message = 'overlay 5a5d40e6 cannot target 123e4567 : that target already (transitively) hedges this overlay';
+      on(() => json({ error: 'invalid_overlay_config', message }, 400));
+      const result = await client.callTool({
+        name: 'configure_overlay',
+        arguments: { strategy_id: OVERLAY, role: 'overlay', policy: betaPolicy, targets },
       });
-    });
-
-    it('pages over overlays and reads only the requested ones', async () => {
-      strategies([[strategyRow(OVERLAY, 'overlay'), strategyRow(ALPHA, 'alpha'), strategyRow(OVERLAY_B, 'overlay'), strategyRow(OVERLAY_C, 'overlay')]]);
-      exposures({ [OVERLAY_B]: json(exposureDoc(OVERLAY_B)) });
-      const result = await client.callTool({ name: 'list_overlays', arguments: { limit: 1, offset: 1 } });
-      expect(result.isError).not.toBe(true);
-      expect(structured(result)).toMatchObject({ count: 1, total: 3, offset: 1, limit: 1 });
-      expect(structured(result).data.map((entry: { strategy_id: string }) => entry.strategy_id)).toEqual([OVERLAY_B]);
-      expect(calls(GATEWAY)).toHaveLength(1);
-    });
-
-    it('returns an empty page when the caller has no overlays, without reading exposure', async () => {
-      strategies([[strategyRow(ALPHA, 'alpha')]]);
-      const result = await client.callTool({ name: 'list_overlays', arguments: {} });
-      expect(result.isError).not.toBe(true);
-      expect(structured(result)).toMatchObject({ data: [], count: 0, total: 0 });
-      expect(calls(GATEWAY)).toHaveLength(0);
-    });
-
-    it('refuses to guess when the platform does not report strategy_role', async () => {
-      const { strategy_role: _role, ...row } = strategyRow(ALPHA, 'alpha');
-      strategies([[row]]);
-      const result = await client.callTool({ name: 'list_overlays', arguments: {} });
       expect(result.isError).toBe(true);
-      expect(structured(result).code).toBe('strategy_role_unavailable');
-      expect(calls(GATEWAY)).toHaveLength(0);
+      expect(structured(result)).toMatchObject({ error: 'invalid_overlay_config', message, upstream_status: 400 });
+      expect(structured(result).operation_outcome).toBeUndefined();
+      expect((result.content as Array<{ text: string }>)[0].text).toContain(message);
     });
 
-    it('refuses a scan it cannot complete instead of listing part of it', async () => {
-      const full = Array.from({ length: 100 }, (_, i) => strategyRow(`00000000-0000-4000-8000-${String(i).padStart(12, '0')}`, 'alpha'));
-      on(url => url.toString().startsWith(`${REST}/strategies`) ? json({ data: full, count: 100 }) : undefined as unknown as Response);
-      const result = await client.callTool({ name: 'list_overlays', arguments: {} });
+    it.each([
+      [404, 'not_found_or_not_owned'],
+      [409, 'duplicate_target'],
+      [403, 'insufficient_scope'],
+    ])('surfaces a %i %s as an error', async (status, code) => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      on(() => json({ error: code, message: 'refused' }, status));
+      const result = await client.callTool({
+        name: 'configure_overlay',
+        arguments: { strategy_id: OVERLAY, role: 'overlay', policy: betaPolicy, targets },
+      });
       expect(result.isError).toBe(true);
-      expect(structured(result).code).toBe('strategy_scan_too_large');
-      expect(calls(`${REST}/strategies`)).toHaveLength(20);
+      expect(structured(result)).toMatchObject({ error: code, upstream_status: status });
     });
 
-    it('surfaces a strategies scope refusal from the REST API', async () => {
-      on(() => json({ error: 'Insufficient scope for "strategies". Requires one of: strategies' }, 403));
-      const result = await client.callTool({ name: 'list_overlays', arguments: {} });
+    it('never retries a failed save and marks its outcome unknown', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      on(() => json({ error: 'overlay_save_failed', message: 'statement timeout' }, 502));
+      const result = await client.callTool({
+        name: 'configure_overlay',
+        arguments: { strategy_id: OVERLAY, role: 'overlay', policy: betaPolicy, targets },
+      });
       expect(result.isError).toBe(true);
-      expect(structured(result)).toMatchObject({ upstream_status: 403 });
-      expect(calls(GATEWAY)).toHaveLength(0);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(structured(result)).toMatchObject({ error: 'overlay_save_failed', upstream_status: 502, operation_outcome: 'unknown' });
+      expect(error).toHaveBeenCalledWith(
+        expect.stringContaining('configure_overlay failed'),
+        expect.objectContaining({ strategy_id: OVERLAY, status: 502, error: 'overlay_save_failed' }),
+      );
     });
 
-    it.each([{ limit: 0 }, { limit: 26 }, { limit: 1.5 }, { offset: -1 }])('rejects invalid paging %j before any HTTP', async (args) => {
-      const result = await client.callTool({ name: 'list_overlays', arguments: args });
+    it('does not call an unreadable 200 a save', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      on(() => json({ ok_maybe: true }));
+      const result = await client.callTool({
+        name: 'configure_overlay',
+        arguments: { strategy_id: OVERLAY, role: 'overlay', policy: betaPolicy, targets },
+      });
+      expect(result.isError).toBe(true);
+      expect(structured(result)).toMatchObject({ code: 'invalid_upstream_response', operation_outcome: 'unknown' });
+    });
+
+    const overlay = (patch: Record<string, unknown>) => ({ strategy_id: OVERLAY, role: 'overlay', policy: betaPolicy, targets, ...patch });
+
+    it.each([
+      ['an overlay with no policy', overlay({ policy: undefined }), 'needs a policy'],
+      ['an overlay with no targets', overlay({ targets: undefined }), 'at least one target'],
+      ['an overlay with an empty target list', overlay({ targets: [] }), 'at least one target'],
+      ['a beta overlay with no benchmark', overlay({ policy: { objective: 'beta', hedge_ratio: 1 } }), 'benchmark_symbol'],
+      ['an overlay targeting itself', overlay({ targets: [{ kind: 'strategy', strategy_id: OVERLAY.toUpperCase() }] }), 'cannot target itself'],
+      ['the same strategy twice', overlay({ targets: [targets[0], { ...targets[0], weight: 2 }] }), 'listed twice'],
+      ['the same account twice', overlay({ targets: [targets[1], { ...targets[1], broker: ' Alpaca ', account_key: 'PA123 ' }] }), 'listed twice'],
+      ['role alpha with a policy', { strategy_id: OVERLAY, role: 'alpha', policy: betaPolicy }, 'pass neither'],
+      ['role alpha with targets', { strategy_id: OVERLAY, role: 'alpha', targets }, 'pass neither'],
+    ])('refuses %s before any HTTP', async (_label, args, message) => {
+      const result = await client.callTool({ name: 'configure_overlay', arguments: args as Record<string, unknown> });
+      expect(result.isError).toBe(true);
+      expect(structured(result).code).toBe('invalid_arguments');
+      expect(structured(result).error).toContain(message);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['an unknown objective', overlay({ policy: { objective: 'gamma' } })],
+      ['a hedge ratio above 5', overlay({ policy: { ...betaPolicy, hedge_ratio: 5.01 } })],
+      ['a negative hedge ratio', overlay({ policy: { ...betaPolicy, hedge_ratio: -0.1 } })],
+      ['a zero tolerance band', overlay({ policy: { ...betaPolicy, tolerance_band: 0 } })],
+      ['a tolerance band above 1', overlay({ policy: { ...betaPolicy, tolerance_band: 1.01 } })],
+      ['an unknown rebalance trigger', overlay({ policy: { ...betaPolicy, rebalance_trigger: 'daily' } })],
+      ['a misspelt policy field', overlay({ policy: { ...betaPolicy, hedge_ration: 0.5 } })],
+      ['a target of unknown kind', overlay({ targets: [{ kind: 'portfolio', strategy_id: ALPHA }] })],
+      ['an account with no environment', overlay({ targets: [{ kind: 'account', account_key: 'PA123', broker: 'alpaca' }] })],
+      ['an account environment that is not paper or live', overlay({ targets: [{ ...targets[1], environment: 'prod' }] })],
+      ['a zero weight', overlay({ targets: [{ ...targets[0], weight: 0 }] })],
+      ['a weight above 10', overlay({ targets: [{ ...targets[0], weight: 10.5 }] })],
+      ['a target strategy id that is not a uuid', overlay({ targets: [{ kind: 'strategy', strategy_id: '../x' }] })],
+      ['an overlay id that is not a uuid', overlay({ strategy_id: '../overlays' })],
+      ['an unknown role', overlay({ role: 'hedge' })],
+    ])('refuses %s at the schema, before any HTTP', async (_label, args) => {
+      const result = await client.callTool({ name: 'configure_overlay', arguments: args as Record<string, unknown> });
       expect(result.isError).toBe(true);
       expect(fetchMock).not.toHaveBeenCalled();
     });
@@ -397,10 +493,11 @@ describe('overlay tools and credential scopes', () => {
     return { server, client };
   }
 
-  it('maps both tools to the strategies scope', async () => {
+  const OVERLAY_TOOLS = ['get_overlay_exposure', 'list_overlays', 'configure_overlay'];
+
+  it('maps every overlay tool to the strategies scope', async () => {
     const { TOOL_SCOPES } = await import('../src/scopes.js');
-    expect(TOOL_SCOPES.get_overlay_exposure).toEqual(['strategies']);
-    expect(TOOL_SCOPES.list_overlays).toEqual(['strategies']);
+    for (const name of OVERLAY_TOOLS) expect(TOOL_SCOPES[name], name).toEqual(['strategies']);
   });
 
   it('advertises them to a strategies key and hides them from a data or trading key', async () => {
@@ -411,17 +508,18 @@ describe('overlay tools and credential scopes', () => {
     ] as const) {
       const { server, client } = await connect({ scopes: new Set(scopes) });
       const names = (await client.listTools()).tools.map(tool => tool.name);
-      for (const name of ['get_overlay_exposure', 'list_overlays']) expect(names.includes(name), `${name} ${[...scopes]}`).toBe(visible);
+      for (const name of OVERLAY_TOOLS) expect(names.includes(name), `${name} ${[...scopes]}`).toBe(visible);
       await client.close();
       await server.close();
     }
   });
 
-  it('defers them in compact mode, finds them by search, and dispatches the read through call_tool', async () => {
+  it('in compact mode advertises configure_overlay by name and defers the reads behind search', async () => {
     const fetchMock = vi.fn(async () => json(exposureDoc(OVERLAY)));
     vi.stubGlobal('fetch', fetchMock);
     const { server, client } = await connect({ mode: 'compact', scopes: new Set(['strategies']) });
     const advertised = (await client.listTools()).tools.map(tool => tool.name);
+    expect(advertised).toContain('configure_overlay');
     expect(advertised).not.toContain('get_overlay_exposure');
     expect(advertised).not.toContain('list_overlays');
 
@@ -433,6 +531,15 @@ describe('overlay tools and credential scopes', () => {
     expect(dispatched.isError).not.toBe(true);
     expect(structured(dispatched).complete).toBe(true);
     expect(String((fetchMock.mock.calls[0] as unknown[])[0])).toBe(`${GATEWAY}/overlay/exposure?strategy_id=${OVERLAY}`);
+
+    // The write is never dispatchable through the generic read path.
+    const write = await client.callTool({
+      name: 'call_tool',
+      arguments: { name: 'configure_overlay', arguments: { strategy_id: OVERLAY, role: 'alpha' } },
+    });
+    expect(write.isError).toBe(true);
+    expect(structured(write).code).toBe('not_dispatchable');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     await client.close();
     await server.close();
   });
@@ -441,6 +548,7 @@ describe('overlay tools and credential scopes', () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     const { server, client } = await connect({ mode: 'compact', scopes: new Set(['data']) });
+    expect((await client.listTools()).tools.map(tool => tool.name)).not.toContain('configure_overlay');
     const dispatched = await client.callTool({ name: 'call_tool', arguments: { name: 'get_overlay_exposure', arguments: { strategy_id: OVERLAY } } });
     expect(dispatched.isError).toBe(true);
     expect(structured(dispatched).code).toBe('unknown_tool');

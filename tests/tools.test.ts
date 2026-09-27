@@ -34,6 +34,7 @@ describe('registerTools', () => {
 
     expect(registered).toEqual([
       'compute_risk',
+      'configure_overlay',
       'create_connection',
       'create_strategy',
       'create_webhook',
@@ -67,7 +68,7 @@ describe('registerTools', () => {
       'sync_portfolio',
       'update_strategy',
     ]);
-    expect(registered).toHaveLength(33);
+    expect(registered).toHaveLength(34);
   });
 
   it('extracts CPZ key/secret from X-CPZ-Key headers', () => {
