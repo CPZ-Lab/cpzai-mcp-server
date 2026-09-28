@@ -282,7 +282,7 @@
   {
     "name": "list_positions",
     "title": "List Positions",
-    "description": "List one page of portfolio positions. Continue with offset until a short page is returned before concluding a portfolio review.",
+    "description": "List one page of portfolio positions. Saxo Bank, tastytrade and Kalshi positions are read live from the broker; a broker that could not be read is named in account_errors, never returned as an empty book. Continue with offset until a short page is returned before concluding a portfolio review.",
     "annotations": {
       "readOnlyHint": true,
       "destructiveHint": false,
@@ -326,7 +326,7 @@
   {
     "name": "place_order",
     "title": "Place Order",
-    "description": "Place an order using a tradable account from list_accounts. Check its broker and environment; live accounts can trade real money. Stop orders and time-in-force support depend on the broker. After a timeout, inspect list_orders before retrying; submission may have succeeded.",
+    "description": "Place an order using a tradable account from list_accounts (pass its account_id and its id as broker_credential_id). Check its broker and environment; live accounts can trade real money. Stop orders and time-in-force support depend on the broker. Saxo Bank, tastytrade and Kalshi orders run through the CPZ gateway (pre-trade guard, margin check, idempotency). After a timeout, inspect list_orders for the client_order_id before retrying; submission may have succeeded.",
     "annotations": {
       "destructiveHint": true,
       "idempotentHint": false

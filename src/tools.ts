@@ -12,6 +12,12 @@ const pageOffset = z.number().int().min(0).optional().describe('Rows to skip; in
 const identifier = z.string().uuid();
 const symbol = z.string().trim().min(1).max(32).regex(/^[A-Za-z0-9^][A-Za-z0-9./:_=^\-]*$/).transform(value => value.toUpperCase());
 const symbols = z.array(symbol).min(1).max(100);
+// Order symbols also take tastytrade's forms: a future (/ESZ6), a futures
+// option (./ESZ6 E1AZ6 261205P3720) and a space-padded OCC option
+// (AAPL  261016C00200000). Data tools keep the stricter symbol above.
+const orderSymbol = z.string().trim().min(1).max(48)
+  .regex(/^(\.?\/)?[A-Za-z0-9^][A-Za-z0-9./:_=^\- ]*$/)
+  .transform(value => value.toUpperCase());
 const dateTime = z.string().refine(value => {
   if (!/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2}))?$/.test(value)) return false;
   const day = value.slice(0, 10);
@@ -180,17 +186,21 @@ export function registerTools(server: McpServer, req: Request) {
 
   server.registerTool('place_order', {
     title: 'Place Order',
-    description: 'Place an order using a tradable account from list_accounts. Check its broker and environment; live accounts can trade real money. Stop orders and time-in-force support depend on the broker. After a timeout, inspect list_orders before retrying; submission may have succeeded.',
+    description: 'Place an order using a tradable account from list_accounts (pass its account_id and its id as broker_credential_id). Check its broker and environment; live accounts can trade real money. Stop orders and time-in-force support depend on the broker. Saxo Bank, tastytrade and Kalshi orders run through the CPZ gateway (pre-trade guard, margin check, idempotency). After a timeout, inspect list_orders for the client_order_id before retrying; submission may have succeeded.',
     inputSchema: z.object({
       account_id: z.string().trim().min(1).describe('Trading account ID from list_accounts'),
       broker_credential_id: identifier.describe('Tradable broker credential ID from list_accounts'),
-      symbol: symbol.describe('Ticker symbol (e.g. AAPL)'),
+      symbol: orderSymbol.describe('Ticker symbol (e.g. AAPL); a tastytrade future is /ESZ6, an option its OCC symbol'),
       side: z.enum(['buy', 'sell']),
       order_type: z.enum(['market', 'limit', 'stop', 'stop_limit']),
       quantity: z.number().finite().positive().describe('Positive quantity; fractional shares depend on the broker'),
       price: z.number().finite().positive().optional().describe('Limit price; required for limit and stop_limit orders'),
       stop_price: z.number().finite().positive().optional().describe('Trigger price; required for stop and stop_limit orders. Broker support varies.'),
       time_in_force: z.literal('day').optional().describe('Day orders only; other durations are not consistently supported by all routes'),
+      client_order_id: z.string().trim().min(1).max(50).regex(/^[A-Za-z0-9._:-]+$/).optional()
+        .describe('Your idempotency key (max 50 characters). Resending it after a timeout returns the first order instead of placing a second. One is generated for Saxo Bank, tastytrade and Kalshi orders when omitted.'),
+      position_effect: z.enum(['open', 'close']).optional()
+        .describe('Options on tastytrade: "open" confirms a sell-to-open (writing an option). A sell of an option the account does not hold is refused without it.'),
     }),
     annotations: { destructiveHint: true, idempotentHint: false },
   }, async (args) => {
@@ -200,7 +210,9 @@ export function registerTools(server: McpServer, req: Request) {
     if (['stop', 'stop_limit'].includes(args.order_type) && args.stop_price === undefined) {
       return invalidArguments('stop_price is required for stop and stop_limit orders');
     }
-    const result = await callRestApi({ method: 'POST', path: '/orders', body: args, ...creds });
+    // A gateway order can take up to 45 s end to end (the broker's own
+    // submit timeout plus the lane wait), longer than the default budget.
+    const result = await callRestApi({ method: 'POST', path: '/orders', body: args, timeoutMs: 60_000, ...creds });
     return formatResult(result);
   });
 
@@ -208,9 +220,10 @@ export function registerTools(server: McpServer, req: Request) {
 
   server.registerTool('list_positions', {
     title: 'List Positions',
-    description: 'List one page of portfolio positions. Continue with offset until a short page is returned before concluding a portfolio review.',
+    description: 'List one page of portfolio positions. Saxo Bank, tastytrade and Kalshi positions are read live from the broker; a broker that could not be read is named in account_errors, never returned as an empty book. Continue with offset until a short page is returned before concluding a portfolio review.',
     inputSchema: z.object({
       account_id: z.string().optional(),
+      broker: z.string().optional().describe('Filter by broker (for example tastytrade)'),
       symbol: symbol.optional(),
       limit: pageLimit,
       offset: pageOffset,
@@ -219,6 +232,7 @@ export function registerTools(server: McpServer, req: Request) {
   }, async (args) => {
     const query: Record<string, string> = {};
     if (args.account_id) query.account_id = args.account_id;
+    if (args.broker) query.broker = args.broker;
     if (args.symbol) query.symbol = args.symbol;
     if (args.limit !== undefined) query.limit = String(args.limit);
     if (args.offset !== undefined) query.offset = String(args.offset);
@@ -244,7 +258,7 @@ export function registerTools(server: McpServer, req: Request) {
     title: 'List Accounts',
     description: 'List connected trading accounts (broker credentials). Sensitive fields excluded.',
     inputSchema: z.object({
-      broker: z.string().optional().describe('Filter by broker (alpaca, ibkr)'),
+      broker: z.string().optional().describe('Filter by broker (alpaca, ibkr, tradestation, tastytrade, saxo, kalshi, ...)'),
       environment: z.enum(['live', 'paper']).optional().describe('live or paper'),
       tradable: z.boolean().optional().describe('true includes only tradable accounts; false or omitted includes all accounts'),
       limit: pageLimit.describe('Page size (default 100, maximum 100)'),
