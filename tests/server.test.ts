@@ -110,6 +110,39 @@ describe('CPZAI MCP protocol', () => {
     expect(JSON.parse(init.body as string)).toMatchObject({ symbol: 'AAPL', price: 105, stop_price: 100, time_in_force: 'day' });
   });
 
+  it.each([
+    ['/esz6', '/ESZ6'],
+    ['AAPL  261016C00200000', 'AAPL  261016C00200000'],
+    ['./ESZ6 E1AZ6 261205P3720', './ESZ6 E1AZ6 261205P3720'],
+  ])('accepts the tastytrade order symbol %s', async (given, sent) => {
+    const result = await client.callTool({ name: 'place_order', arguments: { ...order, symbol: given, order_type: 'market' } });
+    expect(result.isError).not.toBe(true);
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(init.body as string).symbol).toBe(sent);
+  });
+
+  it('forwards an idempotency key and a stated position effect', async () => {
+    await client.callTool({ name: 'place_order', arguments: { ...order, order_type: 'limit', price: 2.1, side: 'sell', client_order_id: 'agent-run-42', position_effect: 'open' } });
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toMatchObject({ client_order_id: 'agent-run-42', position_effect: 'open' });
+  });
+
+  it.each([
+    { client_order_id: 'x'.repeat(51) },
+    { client_order_id: 'has space' },
+    { position_effect: 'maybe' },
+    { symbol: 'AAPL; DROP' },
+  ])('rejects invalid gateway order fields %j before any API request', async extra => {
+    const result = await client.callTool({ name: 'place_order', arguments: { ...order, order_type: 'market', ...extra } });
+    expect(result.isError).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('forwards the broker filter on list_positions', async () => {
+    await client.callTool({ name: 'list_positions', arguments: { broker: 'tastytrade' } });
+    expect(new URL(fetchMock.mock.calls[0][0]).searchParams.get('broker')).toBe('tastytrade');
+  });
+
   it('surfaces an uncertain order timeout without resubmitting', async () => {
     fetchMock.mockRejectedValue(new DOMException('Timed out', 'TimeoutError'));
     const result = await client.callTool({ name: 'place_order', arguments: { ...order, order_type: 'market' } });
