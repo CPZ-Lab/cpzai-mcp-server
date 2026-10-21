@@ -54,7 +54,7 @@ describe('the 2026-07-28 revision', () => {
     const { result, error } = await send('tools/list');
     expect(error).toBeUndefined();
     expect(result.resultType).toBe('complete');
-    expect(result.tools).toHaveLength(34);
+    expect(result.tools).toHaveLength(39);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -79,13 +79,15 @@ describe('the 2026-07-28 revision', () => {
     expect(result.instructions).toContain('call_tool dispatches read-only tools only');
     const list = await send('tools/list', {}, { mode: 'compact' });
     expect(list.result.tools.map((tool: { name: string }) => tool.name)).toContain('search_tools');
-    expect(list.result.tools).toHaveLength(16);
+    // add_to_watchlist and remove_from_watchlist change state, so compact mode
+    // advertises them under their own names.
+    expect(list.result.tools).toHaveLength(18);
   });
 
   it('applies scope filtering on the modern path too', async () => {
     const { result } = await send('tools/list', {}, { scopes: new Set(['data']) });
     const names = result.tools.map((tool: { name: string }) => tool.name);
-    expect(names).toHaveLength(10);
+    expect(names).toHaveLength(13);
     expect(names).not.toContain('place_order');
   });
 

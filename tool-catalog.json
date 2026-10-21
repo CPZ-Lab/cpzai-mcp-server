@@ -1,5 +1,27 @@
 [
   {
+    "name": "add_to_watchlist",
+    "title": "Add to Watchlist",
+    "description": "Add a ticker to your watchlist. 10 symbols at most; a symbol already on it is refused rather than duplicated.",
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
+    "name": "cash_summary",
+    "title": "Cash Summary",
+    "description": "Cash, buying power and equity per connected account as last recorded by the metrics sync, with as_of and stale (older than a day). An account without a balance source says coverage: no_balance_source. Totals cover only accounts with a balance in one currency. This is not a live broker read and never estimates.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
     "name": "compute_risk",
     "title": "Compute Risk",
     "description": "Compute a fresh risk snapshot for the portfolio. Returns VaR, Sharpe, drawdown, exposures, and risk score.",
@@ -57,6 +79,17 @@
     "annotations": {
       "destructiveHint": true,
       "idempotentHint": false
+    }
+  },
+  {
+    "name": "export_transactions",
+    "title": "Export Transactions",
+    "description": "List your fills (filled and partially filled orders) by fill time, for statements and tax preparation. quantity is what filled and gross_amount is null when the fill price is not on record; nothing is defaulted to zero. Pages like every list. For a CSV file, call GET /transactions?format=csv on the REST API with the same filters.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
     }
   },
   {
@@ -313,6 +346,17 @@
     }
   },
   {
+    "name": "list_watchlist",
+    "title": "List Watchlist",
+    "description": "List the symbols on your watchlist (the dashboard card; 10 symbols at most). Each entry has the id remove_from_watchlist takes.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
     "name": "list_webhooks",
     "title": "List Webhooks",
     "description": "List a page of configured webhook subscriptions. Signing secrets are excluded.",
@@ -330,6 +374,15 @@
     "annotations": {
       "destructiveHint": true,
       "idempotentHint": false
+    }
+  },
+  {
+    "name": "remove_from_watchlist",
+    "title": "Remove from Watchlist",
+    "description": "Remove an entry from your watchlist by the id list_watchlist returned.",
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": true
     }
   },
   {

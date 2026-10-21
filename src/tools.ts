@@ -436,6 +436,86 @@ export function registerTools(server: McpServer, req: Request) {
     return formatResult(result);
   });
 
+  // ── Everyday account tools ──────────────────────────────────
+  // The watchlist, a fills export and a cash summary: the everyday surface
+  // an assistant needs beside trading. All three are REST resources
+  // (/watchlist, /transactions, /cash) and carry no credential or secret.
+
+  server.registerTool('list_watchlist', {
+    title: 'List Watchlist',
+    description: 'List the symbols on your watchlist (the dashboard card; 10 symbols at most). Each entry has the id remove_from_watchlist takes.',
+    inputSchema: z.object({}),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  }, async () => {
+    const result = await callRestApi({ method: 'GET', path: '/watchlist', ...creds });
+    return formatResult(result);
+  });
+
+  server.registerTool('add_to_watchlist', {
+    title: 'Add to Watchlist',
+    description: 'Add a ticker to your watchlist. 10 symbols at most; a symbol already on it is refused rather than duplicated.',
+    inputSchema: z.object({ symbol: symbol.describe('Ticker, e.g. AAPL, BRK.B or BTC/USD') }),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  }, async (args) => {
+    const result = await callRestApi({ method: 'POST', path: '/watchlist', body: { symbol: args.symbol }, ...creds });
+    return formatResult(result);
+  });
+
+  server.registerTool('remove_from_watchlist', {
+    title: 'Remove from Watchlist',
+    description: 'Remove an entry from your watchlist by the id list_watchlist returned.',
+    inputSchema: z.object({ id: identifier.describe('Watchlist entry UUID from list_watchlist') }),
+    annotations: { destructiveHint: true, idempotentHint: true },
+  }, async (args) => {
+    const result = await callRestApi({ method: 'DELETE', path: `/watchlist/${args.id}`, ...creds });
+    return formatResult(result);
+  });
+
+  server.registerTool('export_transactions', {
+    title: 'Export Transactions',
+    description: 'List your fills (filled and partially filled orders) by fill time, for statements and tax preparation. quantity is what filled and gross_amount is null when the fill price is not on record; nothing is defaulted to zero. Pages like every list. For a CSV file, call GET /transactions?format=csv on the REST API with the same filters.',
+    inputSchema: z.object({
+      year: z.number().int().min(1970).max(2100).optional().describe('Calendar year in UTC; from and to win over it'),
+      from: dateTime.optional().describe('Fill time at or after this ISO date or timestamp'),
+      to: dateTime.optional().describe('Fill time before this ISO date or timestamp (exclusive)'),
+      account_id: z.string().trim().min(1).optional(),
+      symbol: symbol.optional(),
+      side: z.enum(['buy', 'sell']).optional(),
+      environment: z.enum(['live', 'paper']).optional(),
+      broker: z.string().trim().min(1).optional(),
+      strategy_id: identifier.optional(),
+      limit: pageLimit,
+      offset: pageOffset,
+    }),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  }, async (args) => {
+    const query: Record<string, string> = {};
+    for (const key of ['year', 'from', 'to', 'account_id', 'symbol', 'side', 'environment', 'broker', 'strategy_id', 'limit', 'offset'] as const) {
+      const value = args[key];
+      if (value !== undefined) query[key] = String(value);
+    }
+    const result = await callRestApi({ method: 'GET', path: '/transactions', query, ...creds });
+    return formatResult(result);
+  });
+
+  server.registerTool('cash_summary', {
+    title: 'Cash Summary',
+    description: 'Cash, buying power and equity per connected account as last recorded by the metrics sync, with as_of and stale (older than a day). An account without a balance source says coverage: no_balance_source. Totals cover only accounts with a balance in one currency. This is not a live broker read and never estimates.',
+    inputSchema: z.object({
+      broker: z.string().trim().min(1).optional(),
+      environment: z.enum(['live', 'paper']).optional(),
+      tradable: z.boolean().optional().describe('true keeps only accounts place_order accepts'),
+    }),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  }, async (args) => {
+    const query: Record<string, string> = {};
+    if (args.broker !== undefined) query.broker = args.broker;
+    if (args.environment !== undefined) query.environment = args.environment;
+    if (args.tradable !== undefined) query.tradable = String(args.tradable);
+    const result = await callRestApi({ method: 'GET', path: '/cash', query, ...creds });
+    return formatResult(result);
+  });
+
   // ── Webhooks ────────────────────────────────────────────────
 
   server.registerTool('list_webhooks', {
