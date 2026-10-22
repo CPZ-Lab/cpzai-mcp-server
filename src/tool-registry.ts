@@ -125,6 +125,13 @@ const CATEGORY_BY_TOOL: Record<string, ToolCategory> = {
   list_positions: 'positions',
   sync_portfolio: 'positions',
   list_accounts: 'accounts',
+  // The everyday tools: a fills export reads like orders, cash like the
+  // account it belongs to, and the watchlist like the market data it watches.
+  export_transactions: 'orders',
+  cash_summary: 'accounts',
+  list_watchlist: 'market-data',
+  add_to_watchlist: 'market-data',
+  remove_from_watchlist: 'market-data',
   get_market_data: 'market-data',
   get_bars: 'market-data',
   compute_risk: 'risk',

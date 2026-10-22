@@ -32,16 +32,24 @@ export const TOOL_SCOPES: Record<string, string[]> = {
   configure_overlay: ['strategies'],
   get_backtest_results: ['strategies'],
   get_backtest_result: ['strategies'],
-  list_orders: ['orders'],
-  get_order: ['orders'],
-  place_order: ['orders'],
+  // orders_paper is the restricted trade scope: the REST API accepts it
+  // wherever orders is read, and on POST /orders refuses any account that is
+  // not paper. It never reaches execute_strategy or the middle office.
+  list_orders: ['orders', 'orders_paper'],
+  get_order: ['orders', 'orders_paper'],
+  place_order: ['orders', 'orders_paper'],
   execute_strategy: ['orders'],
   list_accounts: ['trading_credentials'],
-  list_positions: ['trading_credentials', 'orders'],
-  sync_portfolio: ['trading_credentials', 'orders'],
-  compute_risk: ['trading_credentials', 'orders'],
-  list_risk_snapshots: ['trading_credentials', 'orders'],
-  get_risk_snapshot: ['trading_credentials', 'orders'],
+  list_positions: ['trading_credentials', 'orders', 'orders_paper'],
+  sync_portfolio: ['trading_credentials', 'orders', 'orders_paper'],
+  compute_risk: ['trading_credentials', 'orders', 'orders_paper'],
+  list_risk_snapshots: ['trading_credentials', 'orders', 'orders_paper'],
+  get_risk_snapshot: ['trading_credentials', 'orders', 'orders_paper'],
+  list_watchlist: ['data', 'orders', 'orders_paper'],
+  add_to_watchlist: ['data', 'orders', 'orders_paper'],
+  remove_from_watchlist: ['data', 'orders', 'orders_paper'],
+  export_transactions: ['trading_credentials', 'orders', 'orders_paper'],
+  cash_summary: ['trading_credentials', 'orders', 'orders_paper'],
   list_deals: ['trading_credentials', 'orders'],
   list_lifecycle_events: ['trading_credentials', 'orders'],
   list_cash_flows: ['trading_credentials', 'orders'],
@@ -55,9 +63,9 @@ export const TOOL_SCOPES: Record<string, string[]> = {
   create_connection: ['data'],
   // Webhooks span every event family, so the REST API accepts any resource
   // scope. Identity-only tokens still hold none of them.
-  list_webhooks: ['strategies', 'data', 'orders', 'trading_credentials', 'data_connections', 'storage', 'simons'],
-  create_webhook: ['strategies', 'data', 'orders', 'trading_credentials', 'data_connections', 'storage', 'simons'],
-  delete_webhook: ['strategies', 'data', 'orders', 'trading_credentials', 'data_connections', 'storage', 'simons'],
+  list_webhooks: ['strategies', 'data', 'orders', 'orders_paper', 'trading_credentials', 'data_connections', 'storage', 'simons'],
+  create_webhook: ['strategies', 'data', 'orders', 'orders_paper', 'trading_credentials', 'data_connections', 'storage', 'simons'],
+  delete_webhook: ['strategies', 'data', 'orders', 'orders_paper', 'trading_credentials', 'data_connections', 'storage', 'simons'],
   // get_profile, search_tools and call_tool need no resource scope.
 };
 

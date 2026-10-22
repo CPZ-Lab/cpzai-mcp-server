@@ -38,13 +38,24 @@ describe('scope-aware discovery', () => {
     const names = await toolNames({ scopes: new Set(['data']) });
     expect(names).toEqual([
       'list_data_files', 'get_data_file', 'list_connections', 'create_connection',
-      'get_market_data', 'get_bars', 'list_webhooks', 'create_webhook', 'delete_webhook', 'get_profile',
+      'get_market_data', 'get_bars', 'list_watchlist', 'add_to_watchlist', 'remove_from_watchlist',
+      'list_webhooks', 'create_webhook', 'delete_webhook', 'get_profile',
     ]);
     // The tools that would 403 are gone, including the whole order surface.
     for (const gone of ['place_order', 'list_orders', 'list_positions', 'list_strategies', 'list_cash_flows']) {
       expect(names).not.toContain(gone);
     }
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('gives a paper-only key the order surface but not execution, accounts or the middle office', async () => {
+    const names = await toolNames({ scopes: new Set(['orders_paper']) });
+    for (const kept of ['place_order', 'list_orders', 'list_positions', 'export_transactions', 'cash_summary', 'list_watchlist', 'list_webhooks', 'get_profile']) {
+      expect(names).toContain(kept);
+    }
+    for (const gone of ['execute_strategy', 'list_accounts', 'list_cash_flows', 'list_deals', 'list_strategies', 'get_bars']) {
+      expect(names).not.toContain(gone);
+    }
   });
 
   it('keeps the trading surface for a trade-scoped key', async () => {
@@ -57,8 +68,8 @@ describe('scope-aware discovery', () => {
   });
 
   it('advertises the full catalogue when scopes are unknown, which is not the same as none', async () => {
-    expect(await toolNames({ scopes: null })).toHaveLength(34);
-    expect(await toolNames({})).toHaveLength(34);
+    expect(await toolNames({ scopes: null })).toHaveLength(39);
+    expect(await toolNames({})).toHaveLength(39);
     // An identity-only credential holds no resource scope and gets only the
     // tools that need none.
     expect(await toolNames({ scopes: new Set<string>() })).toEqual(['get_profile']);
@@ -87,8 +98,11 @@ describe('scope-aware discovery', () => {
   });
 
   it('every tool that maps to a scope names one the REST API recognizes', async () => {
+    // ALL_RESOURCE_SCOPES in supabase/functions/rest-api/resources.ts.
+    // orders_paper ships in CPZ-Lab/cpzai#1911; until that is deployed the REST
+    // API answers 403 to an orders_paper key, which is the safe direction.
     const vocabulary = new Set([
-      'strategies', 'data', 'orders', 'trading_credentials', 'data_connections', 'storage', 'simons',
+      'strategies', 'data', 'orders', 'orders_paper', 'trading_credentials', 'data_connections', 'storage', 'simons',
     ]);
     for (const [tool, accepted] of Object.entries(TOOL_SCOPES)) {
       expect(accepted.length, tool).toBeGreaterThan(0);

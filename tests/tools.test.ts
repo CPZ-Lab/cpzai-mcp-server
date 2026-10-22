@@ -33,6 +33,8 @@ describe('registerTools', () => {
     ).sort();
 
     expect(registered).toEqual([
+      'add_to_watchlist',
+      'cash_summary',
       'compute_risk',
       'configure_overlay',
       'create_connection',
@@ -40,6 +42,7 @@ describe('registerTools', () => {
       'create_webhook',
       'delete_webhook',
       'execute_strategy',
+      'export_transactions',
       'get_backtest_result',
       'get_backtest_results',
       'get_bars',
@@ -63,12 +66,14 @@ describe('registerTools', () => {
       'list_positions',
       'list_risk_snapshots',
       'list_strategies',
+      'list_watchlist',
       'list_webhooks',
       'place_order',
+      'remove_from_watchlist',
       'sync_portfolio',
       'update_strategy',
     ]);
-    expect(registered).toHaveLength(34);
+    expect(registered).toHaveLength(39);
   });
 
   it('extracts CPZ key/secret from X-CPZ-Key headers', () => {

@@ -67,6 +67,11 @@ OAuth access tokens are opaque and accepted by this server. Do not pass them dir
 | Middle office | `list_cash_flows` | entity_id, deal_id, fund, book, from, to, unsettled |
 | Middle office | `list_journal_entries` | entity_id, deal_id, from, to |
 | Middle office | `list_fund_periods` | entity_id, fund, status |
+| Everyday | `list_watchlist` | Your watchlist, 10 symbols at most |
+| Everyday | `add_to_watchlist` | symbol |
+| Everyday | `remove_from_watchlist` | id from `list_watchlist` |
+| Everyday | `export_transactions` | year or from/to, account_id, symbol, side, environment, broker, strategy_id |
+| Everyday | `cash_summary` | broker, environment, tradable |
 | Webhooks | `list_webhooks` | active |
 | Webhooks | `create_webhook` | Subscribe an HTTPS endpoint to events |
 | Webhooks | `delete_webhook` | Remove a webhook subscription |
@@ -176,7 +181,7 @@ The server is stateless in both eras: no sessions, no `Mcp-Session-Id`, one fres
 
 ### Scope-aware discovery
 
-`tools/list` carries only the tools the calling credential's scopes permit. A `data` key sees 10 tools, not 34; an identity-only OAuth token sees `get_profile` alone; `search_tools` will not return an out-of-scope tool and `call_tool` will not dispatch one. Scopes come from `GET /me` on the REST API, cached per credential for 60 seconds and looked up only for `tools/list`, never on the call path.
+`tools/list` carries only the tools the calling credential's scopes permit. A `data` key sees 13 tools, not 39; an `orders_paper` key (trading limited to paper accounts) sees the order surface but not `execute_strategy`, `list_accounts` or the middle office; an identity-only OAuth token sees `get_profile` alone; `search_tools` will not return an out-of-scope tool and `call_tool` will not dispatch one. Scopes come from `GET /me` on the REST API, cached per credential for 60 seconds and looked up only for `tools/list`, never on the call path.
 
 If the lookup fails, or the REST API deployment predates the `scopes` field, the full catalogue is advertised and the reason is logged: unknown is not the same as none. Filtering is discovery, not enforcement. The REST API remains the only thing that decides what a credential may touch, so a tool that is present can still return 403.
 
