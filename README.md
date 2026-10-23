@@ -48,6 +48,8 @@ OAuth access tokens are opaque and accepted by this server. Do not pass them dir
 | Backtests | `get_backtest_result` | Read one saved backtest run |
 | Orders | `list_orders` | status, symbol, side, strategy_id |
 | Orders | `get_order` | Read one CPZ order record |
+| Orders | `list_order_approvals` | Orders held for the owner's approval, with effective_status |
+| Orders | `get_order_approval` | One approval by the id a pending_approval answer returned |
 | Orders | `place_order` | Submit an order to the selected connected account |
 | Portfolio | `list_positions` | account_id, symbol |
 | Portfolio | `sync_portfolio` | Synchronize connected broker portfolios |
@@ -181,7 +183,7 @@ The server is stateless in both eras: no sessions, no `Mcp-Session-Id`, one fres
 
 ### Scope-aware discovery
 
-`tools/list` carries only the tools the calling credential's scopes permit. A `data` key sees 13 tools, not 39; an `orders_paper` key (trading limited to paper accounts) sees the order surface but not `execute_strategy`, `list_accounts` or the middle office; an identity-only OAuth token sees `get_profile` alone; `search_tools` will not return an out-of-scope tool and `call_tool` will not dispatch one. Scopes come from `GET /me` on the REST API, cached per credential for 60 seconds and looked up only for `tools/list`, never on the call path.
+`tools/list` carries only the tools the calling credential's scopes permit. A `data` key sees 13 tools, not 41; an `orders_paper` key (trading limited to paper accounts) sees the order surface but not `execute_strategy`, `list_accounts` or the middle office; an identity-only OAuth token sees `get_profile` alone; `search_tools` will not return an out-of-scope tool and `call_tool` will not dispatch one. Scopes come from `GET /me` on the REST API, cached per credential for 60 seconds and looked up only for `tools/list`, never on the call path.
 
 If the lookup fails, or the REST API deployment predates the `scopes` field, the full catalogue is advertised and the reason is logged: unknown is not the same as none. Filtering is discovery, not enforcement. The REST API remains the only thing that decides what a credential may touch, so a tool that is present can still return 403.
 

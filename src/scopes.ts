@@ -37,6 +37,8 @@ export const TOOL_SCOPES: Record<string, string[]> = {
   // not paper. It never reaches execute_strategy or the middle office.
   list_orders: ['orders', 'orders_paper'],
   get_order: ['orders', 'orders_paper'],
+  list_order_approvals: ['orders', 'orders_paper'],
+  get_order_approval: ['orders', 'orders_paper'],
   place_order: ['orders', 'orders_paper'],
   execute_strategy: ['orders'],
   list_accounts: ['trading_credentials'],

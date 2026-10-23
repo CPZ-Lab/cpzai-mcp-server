@@ -121,6 +121,8 @@ const CATEGORY_BY_TOOL: Record<string, ToolCategory> = {
   get_backtest_result: 'backtests',
   list_orders: 'orders',
   get_order: 'orders',
+  list_order_approvals: 'orders',
+  get_order_approval: 'orders',
   place_order: 'orders',
   list_positions: 'positions',
   sync_portfolio: 'positions',

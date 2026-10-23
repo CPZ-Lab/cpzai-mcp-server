@@ -49,6 +49,7 @@ describe('registerTools', () => {
       'get_data_file',
       'get_market_data',
       'get_order',
+      'get_order_approval',
       'get_overlay_exposure',
       'get_profile',
       'get_risk_snapshot',
@@ -61,6 +62,7 @@ describe('registerTools', () => {
       'list_fund_periods',
       'list_journal_entries',
       'list_lifecycle_events',
+      'list_order_approvals',
       'list_orders',
       'list_overlays',
       'list_positions',
@@ -73,7 +75,7 @@ describe('registerTools', () => {
       'sync_portfolio',
       'update_strategy',
     ]);
-    expect(registered).toHaveLength(39);
+    expect(registered).toHaveLength(41);
   });
 
   it('extracts CPZ key/secret from X-CPZ-Key headers', () => {
