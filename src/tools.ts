@@ -186,7 +186,7 @@ export function registerTools(server: McpServer, req: Request) {
 
   server.registerTool('place_order', {
     title: 'Place Order',
-    description: 'Place an order using a tradable account from list_accounts (pass its account_id and its id as broker_credential_id). Check its broker and environment; live accounts can trade real money. Stop orders and time-in-force support depend on the broker. Saxo Bank, tastytrade and Kalshi orders run through the CPZ gateway (pre-trade guard, margin check, idempotency). After a timeout, inspect list_orders for the client_order_id before retrying; submission may have succeeded.',
+    description: 'Place an order using a tradable account from list_accounts (pass its account_id and its id as broker_credential_id). Check its broker and environment; live accounts can trade real money. Stop orders and time-in-force support depend on the broker. Saxo Bank, tastytrade and Kalshi orders run through the CPZ gateway (pre-trade guard, margin check, idempotency). After a timeout, inspect list_orders for the client_order_id before retrying; submission may have succeeded. If the connection asks the owner to approve every order, the answer is status pending_approval with an approval_id and nothing is placed: tell the user to approve it at the approve_at link, check get_order_approval, and once it reads approved call place_order again with the same arguments plus approval_id.',
     inputSchema: z.object({
       account_id: z.string().trim().min(1).describe('Trading account ID from list_accounts'),
       broker_credential_id: identifier.describe('Tradable broker credential ID from list_accounts'),
@@ -201,6 +201,8 @@ export function registerTools(server: McpServer, req: Request) {
         .describe('Your idempotency key (max 50 characters). Resending it after a timeout returns the first order instead of placing a second. One is generated for Saxo Bank, tastytrade and Kalshi orders when omitted.'),
       position_effect: z.enum(['open', 'close']).optional()
         .describe('Options on tastytrade: "open" confirms a sell-to-open (writing an option). A sell of an option the account does not hold is refused without it.'),
+      approval_id: identifier.optional()
+        .describe('Only after a pending_approval answer that the owner has approved: the approval_id, sent with the same arguments as before. The approved order is placed once; a changed order is refused.'),
     }),
     annotations: { destructiveHint: true, idempotentHint: false },
   }, async (args) => {
@@ -213,6 +215,34 @@ export function registerTools(server: McpServer, req: Request) {
     // A gateway order can take up to 45 s end to end (the broker's own
     // submit timeout plus the lane wait), longer than the default budget.
     const result = await callRestApi({ method: 'POST', path: '/orders', body: args, timeoutMs: 60_000, ...creds });
+    return formatResult(result);
+  });
+
+  server.registerTool('list_order_approvals', {
+    title: 'List Order Approvals',
+    description: 'Orders held for the account owner\'s approval, newest first, with effective_status (pending, approved, rejected, consumed, placed, failed, or expired once past expires_at). The owner decides in the CPZAI app; no tool can approve an order.',
+    inputSchema: z.object({
+      status: z.enum(['pending', 'approved', 'rejected', 'consumed', 'placed', 'failed']).optional().describe('Stored status filter'),
+      limit: pageLimit,
+      offset: pageOffset,
+    }),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  }, async (args) => {
+    const query: Record<string, string> = {};
+    if (args.status) query.status = args.status;
+    if (args.limit !== undefined) query.limit = String(args.limit);
+    if (args.offset !== undefined) query.offset = String(args.offset);
+    const result = await callRestApi({ method: 'GET', path: '/order-approvals', query, ...creds });
+    return formatResult(result);
+  });
+
+  server.registerTool('get_order_approval', {
+    title: 'Get Order Approval',
+    description: 'Read one order approval by the approval_id from a pending_approval answer. When effective_status is approved, call place_order again with the same arguments plus approval_id; rejected or expired means no order will be placed for it.',
+    inputSchema: z.object({ id: identifier.describe('approval_id from place_order') }),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  }, async (args) => {
+    const result = await callRestApi({ method: 'GET', path: `/order-approvals/${args.id}`, ...creds });
     return formatResult(result);
   });
 

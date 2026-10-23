@@ -159,6 +159,17 @@
     }
   },
   {
+    "name": "get_order_approval",
+    "title": "Get Order Approval",
+    "description": "Read one order approval by the approval_id from a pending_approval answer. When effective_status is approved, call place_order again with the same arguments plus approval_id; rejected or expired means no order will be placed for it.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
     "name": "get_overlay_exposure",
     "title": "Get Overlay Exposure",
     "description": "Resolve one overlay strategy's hedge: what its targets (strategies or broker accounts) carry, what the overlay itself holds, the combined book, and how far the hedge is from policy (objective, target ratio, tolerance band, current ratio, drift, advisory suggested order), plus hedge effectiveness and base/overlay/combined P&L. When complete is false a price or price history is missing: the hedge ratio and suggested order are withheld (null), never estimated, and no hedge should be sized from the result. Read-only; places no order. Requires the strategies scope.",
@@ -291,6 +302,17 @@
     }
   },
   {
+    "name": "list_order_approvals",
+    "title": "List Order Approvals",
+    "description": "Orders held for the account owner's approval, newest first, with effective_status (pending, approved, rejected, consumed, placed, failed, or expired once past expires_at). The owner decides in the CPZAI app; no tool can approve an order.",
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  },
+  {
     "name": "list_orders",
     "title": "List Orders",
     "description": "List trading orders. Filter by status, symbol, side, or strategy.",
@@ -370,7 +392,7 @@
   {
     "name": "place_order",
     "title": "Place Order",
-    "description": "Place an order using a tradable account from list_accounts (pass its account_id and its id as broker_credential_id). Check its broker and environment; live accounts can trade real money. Stop orders and time-in-force support depend on the broker. Saxo Bank, tastytrade and Kalshi orders run through the CPZ gateway (pre-trade guard, margin check, idempotency). After a timeout, inspect list_orders for the client_order_id before retrying; submission may have succeeded.",
+    "description": "Place an order using a tradable account from list_accounts (pass its account_id and its id as broker_credential_id). Check its broker and environment; live accounts can trade real money. Stop orders and time-in-force support depend on the broker. Saxo Bank, tastytrade and Kalshi orders run through the CPZ gateway (pre-trade guard, margin check, idempotency). After a timeout, inspect list_orders for the client_order_id before retrying; submission may have succeeded. If the connection asks the owner to approve every order, the answer is status pending_approval with an approval_id and nothing is placed: tell the user to approve it at the approve_at link, check get_order_approval, and once it reads approved call place_order again with the same arguments plus approval_id.",
     "annotations": {
       "destructiveHint": true,
       "idempotentHint": false
